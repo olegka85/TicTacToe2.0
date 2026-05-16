@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Крестики-Нолики 2.0</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -188,28 +190,250 @@
 <body>
     <h1>🎮 Крестики-Нолики 2.0</h1>
     
-    <div class="game-info">
-        <div class="player-turn">Ход: <span id="currentPlayer">X</span></div>
-        <div class="player-turn">Следующее поле: <span id="nextBoard">Любое</span></div>
+    <!-- Главное меню -->
+    <div id="mainMenu" style="text-align: center; margin-bottom: 20px;">
+        <button class="restart-btn" onclick="startLocalGame()">📱 На одном устройстве</button>
+        <button class="restart-btn" onclick="showMultiplayerMenu()">🌐 Онлайн игра</button>
     </div>
-
-    <div class="board-container">
-        <div class="big-board" id="bigBoard"></div>
+    
+    <!-- Меню мультиплеера -->
+    <div id="multiplayerMenu" style="display: none; text-align: center; margin-bottom: 20px;">
+        <button class="restart-btn" onclick="showCreateGame()">🆕 Создать комнату</button>
+        <button class="restart-btn" onclick="showJoinGame()">🎮 Войти в комнату</button>
+        <button class="restart-btn" onclick="backToMainMenu()" style="background: rgba(255,255,255,0.3);">↩️ Назад</button>
     </div>
+    
+    <!-- Форма создания игры -->
+    <div id="createGameContainer" style="display: none; text-align: center; margin-bottom: 20px;">
+        <p style="color: white; margin-bottom: 10px;">Ваш код игры: <strong id="gameCodeDisplay" style="font-size: 24px; color: #ffd700;"></strong></p>
+        <p style="color: white; font-size: 14px; margin-bottom: 15px;">Отправьте этот код второму игроку</p>
+        <button class="restart-btn" onclick="copyGameCode()">📋 Копировать код</button>
+        <button class="restart-btn" onclick="cancelGame()">❌ Отмена</button>
+    </div>
+    
+    <!-- Форма входа в игру -->
+    <div id="joinGameContainer" style="display: none; text-align: center; margin-bottom: 20px;">
+        <input type="text" id="roomCodeInput" placeholder="Введите код игры" maxlength="6" 
+               style="padding: 10px; font-size: 18px; border-radius: 8px; border: none; text-align: center; letter-spacing: 3px; text-transform: uppercase; width: 200px; margin-bottom: 10px;">
+        <br>
+        <button class="restart-btn" onclick="joinGame()">🎮 Войти</button>
+        <button class="restart-btn" onclick="cancelJoin()">❌ Отмена</button>
+    </div>
+    
+    <!-- Статус подключения -->
+    <div id="connectionStatus" style="text-align: center; color: white; margin-bottom: 10px; font-size: 14px;"></div>
+    
+    <!-- Игровое поле (скрыто до начала игры) -->
+    <div id="gameContainer" style="display: none;">
+        <div class="game-info">
+            <div class="player-turn">Ход: <span id="currentPlayer">X</span></div>
+            <div class="player-turn">Следующее поле: <span id="nextBoard">Любое</span></div>
+        </div>
 
-    <div class="message" id="message"></div>
-    <button class="restart-btn" onclick="restartGame()">🔄 Новая игра</button>
+        <div class="board-container">
+            <div class="big-board" id="bigBoard"></div>
+        </div>
+
+        <div class="message" id="message"></div>
+        
+        <button class="restart-btn" onclick="restartGame()" style="display: none;" id="restartBtn">🔄 Новая игра</button>
+    </div>
 
     <canvas id="confettiCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; display: none;"></canvas>
 
     <script>
+        // Глобальные переменные для мультиплеера
+        let socket = null;
+        let roomId = null;
+        let myPlayerId = null;
+        let isMultiplayer = false;
+        
         let gameState = {
             bigBoard: Array(9).fill(null),
             smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
             currentPlayer: 'X',
             nextBoard: null,
-            gameActive: true
+            gameActive: true,
+            bigWinner: null
         };
+
+        // Функции навигации по меню
+        function startLocalGame() {
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('gameContainer').style.display = 'block';
+            initGame();
+        }
+
+        function showMultiplayerMenu() {
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('multiplayerMenu').style.display = 'block';
+        }
+
+        function backToMainMenu() {
+            document.getElementById('multiplayerMenu').style.display = 'none';
+            document.getElementById('mainMenu').style.display = 'block';
+            cancelGame();
+        }
+
+        // Инициализация Socket.io
+        function initSocket(serverUrl) {
+            socket = io(serverUrl);
+            
+            socket.on('connect', () => {
+                console.log('Подключено к серверу');
+                updateConnectionStatus('🟢 Подключено', 'green');
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('Отключено от сервера');
+                updateConnectionStatus('🔴 Отключено', 'red');
+            });
+            
+            socket.on('gameCreated', (data) => {
+                roomId = data.roomId;
+                myPlayerId = data.playerId;
+                isMultiplayer = true;
+                
+                document.getElementById('gameCodeDisplay').textContent = roomId;
+                document.getElementById('createGameContainer').style.display = 'block';
+                document.getElementById('multiplayerMenu').style.display = 'none';
+                updateConnectionStatus(`Ожидание второго игрока... Код: ${roomId}`, 'yellow');
+                
+                // Показываем контейнер игры
+                document.getElementById('gameContainer').style.display = 'block';
+                // Скрываем доску пока не начнётся игра
+                document.getElementById('bigBoard').style.opacity = '0.5';
+                document.getElementById('bigBoard').style.pointerEvents = 'none';
+            });
+            
+            socket.on('gameJoined', (data) => {
+                roomId = data.roomId;
+                myPlayerId = data.playerId;
+                isMultiplayer = true;
+                
+                document.getElementById('joinGameContainer').style.display = 'none';
+                document.getElementById('gameContainer').style.display = 'block';
+                updateConnectionStatus('Игра началась!', 'green');
+                
+                document.getElementById('bigBoard').style.opacity = '1';
+                document.getElementById('bigBoard').style.pointerEvents = 'auto';
+                document.getElementById('restartBtn').style.display = 'inline-block';
+            });
+            
+            socket.on('gameStart', (data) => {
+                updateConnectionStatus(`Ход игрока: ${data.currentPlayer}`, 'green');
+                document.getElementById('bigBoard').style.opacity = '1';
+                document.getElementById('bigBoard').style.pointerEvents = 'auto';
+                document.getElementById('restartBtn').style.display = 'inline-block';
+            });
+            
+            socket.on('moveMade', (data) => {
+                gameState.smallBoards = data.smallBoards;
+                gameState.bigBoard = data.bigBoard;
+                gameState.nextBoard = data.nextBoard;
+                gameState.currentPlayer = data.currentPlayer;
+                
+                updateUI();
+                
+                if (myPlayerId === gameState.currentPlayer) {
+                    updateConnectionStatus('Ваш ход!', 'green');
+                } else {
+                    updateConnectionStatus('Ход соперника...', 'yellow');
+                }
+            });
+            
+            socket.on('gameOver', (data) => {
+                gameState.gameActive = false;
+                
+                if (data.winner === 'draw') {
+                    document.getElementById('message').textContent = '🤝 Ничья!';
+                } else {
+                    const winnerText = data.winner === myPlayerId ? '🎉 Вы победили! Поздравляем! 🎊' : `😔 Победил игрок ${data.winner}`;
+                    document.getElementById('message').textContent = winnerText;
+                    
+                    if (data.winner === myPlayerId) {
+                        startConfetti();
+                    }
+                }
+                
+                updateConnectionStatus('Игра завершена', 'white');
+            });
+            
+            socket.on('playerDisconnected', (data) => {
+                updateConnectionStatus(`⚠️ Игрок ${data.playerId} отключился`, 'orange');
+                document.getElementById('bigBoard').style.opacity = '0.5';
+                document.getElementById('bigBoard').style.pointerEvents = 'none';
+            });
+            
+            socket.on('error', (msg) => {
+                alert('Ошибка: ' + msg);
+                updateConnectionStatus('Ошибка подключения', 'red');
+            });
+        }
+        
+        function updateConnectionStatus(text, color) {
+            document.getElementById('connectionStatus').textContent = text;
+            document.getElementById('connectionStatus').style.color = color;
+        }
+        
+        function showCreateGame() {
+            // Используем публичный сервер или локальный
+            const serverUrl = 'https://your-server-url.com'; // Замените на ваш URL после деплоя
+            // Для тестов можно использовать localhost:3000 если запускаете локально
+            // const serverUrl = 'http://localhost:3000';
+            
+            if (!socket) {
+                initSocket(serverUrl);
+            }
+            
+            socket.emit('createGame');
+        }
+        
+        function showJoinGame() {
+            document.getElementById('joinGameContainer').style.display = 'block';
+            document.getElementById('multiplayerMenu').style.display = 'none';
+        }
+        
+        function joinGame() {
+            const roomCode = document.getElementById('roomCodeInput').value.toUpperCase().trim();
+            
+            if (!roomCode || roomCode.length !== 6) {
+                alert('Введите корректный код игры (6 символов)');
+                return;
+            }
+            
+            const serverUrl = 'https://your-server-url.com'; // Замените на ваш URL после деплоя
+            // const serverUrl = 'http://localhost:3000';
+            
+            if (!socket) {
+                initSocket(serverUrl);
+            }
+            
+            setTimeout(() => {
+                socket.emit('joinGame', roomCode);
+            }, 500);
+        }
+        
+        function cancelGame() {
+            document.getElementById('createGameContainer').style.display = 'none';
+            document.getElementById('multiplayerMenu').style.display = 'block';
+            document.getElementById('bigBoard').style.opacity = '1';
+            document.getElementById('bigBoard').style.pointerEvents = 'auto';
+        }
+        
+        function cancelJoin() {
+            document.getElementById('joinGameContainer').style.display = 'none';
+            document.getElementById('multiplayerMenu').style.display = 'block';
+        }
+        
+        function copyGameCode() {
+            const code = document.getElementById('gameCodeDisplay').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('Код скопирован в буфер обмена!');
+            }).catch(() => {
+                alert('Не удалось скопировать код');
+            });
+        }
 
         // Конфетти эффект
         function startConfetti() {
@@ -290,6 +514,24 @@
         }
 
         function makeMove(boardIndex, cellIndex) {
+            // Если это мультиплеерная игра и сейчас мой ход
+            if (isMultiplayer && socket && roomId && myPlayerId) {
+                // Проверка, что сейчас мой ход
+                if (gameState.currentPlayer !== myPlayerId) {
+                    alert('Сейчас не ваш ход!');
+                    return;
+                }
+                
+                // Отправляем ход на сервер
+                socket.emit('makeMove', {
+                    roomId: roomId,
+                    cellIndex: boardIndex * 9 + cellIndex,
+                    playerId: myPlayerId
+                });
+                return;
+            }
+            
+            // Локальная игра (один экран)
             if (!gameState.gameActive) return;
             if (gameState.bigBoard[boardIndex] !== null) return;
             if (gameState.nextBoard !== null && gameState.nextBoard !== boardIndex) return;
@@ -429,10 +671,17 @@
             };
             document.getElementById('message').textContent = '';
             document.getElementById('confettiCanvas').style.display = 'none';
-            initGame();
+            
+            // Если мультиплеер - уведомляем сервер
+            if (isMultiplayer && socket && roomId) {
+                socket.emit('restartGame', { roomId: roomId });
+            } else {
+                initGame();
+            }
         }
 
-        initGame();
+        // Инициализация при загрузке - показываем главное меню
+        // initGame вызывается только после выбора режима
     </script>
 </body>
 </html>
