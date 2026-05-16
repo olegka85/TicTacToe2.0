@@ -200,6 +200,8 @@
     <div class="message" id="message"></div>
     <button class="restart-btn" onclick="restartGame()">🔄 Новая игра</button>
 
+    <canvas id="confettiCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; display: none;"></canvas>
+
     <script>
         let gameState = {
             bigBoard: Array(9).fill(null),
@@ -208,6 +210,61 @@
             nextBoard: null,
             gameActive: true
         };
+
+        // Конфетти эффект
+        function startConfetti() {
+            const canvas = document.getElementById('confettiCanvas');
+            canvas.style.display = 'block';
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            const particles = [];
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500', '#ff69b4'];
+
+            for (let i = 0; i < 300; i++) {
+                particles.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height - canvas.height,
+                    size: Math.random() * 10 + 5,
+                    speedY: Math.random() * 3 + 2,
+                    speedX: Math.random() * 2 - 1,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    rotation: Math.random() * 360,
+                    rotationSpeed: Math.random() * 10 - 5
+                });
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                particles.forEach(p => {
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rotation * Math.PI / 180);
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+                    ctx.restore();
+
+                    p.y += p.speedY;
+                    p.x += p.speedX;
+                    p.rotation += p.rotationSpeed;
+
+                    if (p.y > canvas.height) {
+                        p.y = -p.size;
+                        p.x = Math.random() * canvas.width;
+                    }
+                });
+
+                if (gameState.gameActive === false && gameState.bigWinner) {
+                    requestAnimationFrame(animate);
+                } else {
+                    canvas.style.display = 'none';
+                }
+            }
+
+            animate();
+        }
 
         function initGame() {
             const bigBoard = document.getElementById('bigBoard');
@@ -241,26 +298,39 @@
             gameState.smallBoards[boardIndex][cellIndex] = gameState.currentPlayer;
             
             const winner = checkSmallBoardWinner(boardIndex);
+            
+            // ПРОВЕРКА ПОБЕДЫ: Если собрана линия в этом малом поле 3x3 - игрок выигрывает сразу!
             if (winner) {
-                gameState.bigBoard[boardIndex] = winner;
+                gameState.gameActive = false;
+                gameState.bigWinner = winner;
+                document.getElementById('message').textContent = `🎉 Победил ${winner}! Поздравляем! 🎊`;
                 updateSmallBoardVisual(boardIndex, winner);
-            } else if (gameState.smallBoards[boardIndex].every(cell => cell !== null)) {
+                startConfetti();
+                updateUI();
+                return;
+            }
+            
+            // Если нет победы, проверяем на ничью в малом поле
+            if (gameState.smallBoards[boardIndex].every(cell => cell !== null)) {
                 gameState.bigBoard[boardIndex] = 'draw';
                 updateSmallBoardVisual(boardIndex, 'draw');
             }
 
-            const bigWinner = checkBigBoardWinner();
-            if (bigWinner) {
+            // Проверка на ничью во всей игре (все поля заполнены)
+            if (gameState.bigBoard.every(cell => cell !== null)) {
                 gameState.gameActive = false;
-                document.getElementById('message').textContent = 
-                    bigWinner === 'draw' ? '🤝 Ничья!' : `🎉 Победил ${bigWinner}!`;
-            } else {
-                gameState.nextBoard = cellIndex;
-                if (gameState.bigBoard[cellIndex] !== null) {
-                    gameState.nextBoard = null;
-                }
-                gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
+                gameState.bigWinner = 'draw';
+                document.getElementById('message').textContent = '🤝 Ничья!';
+                updateUI();
+                return;
             }
+
+            // Определение следующего поля
+            gameState.nextBoard = cellIndex;
+            if (gameState.bigBoard[cellIndex] !== null) {
+                gameState.nextBoard = null;
+            }
+            gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
 
             updateUI();
         }
@@ -354,9 +424,11 @@
                 smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
                 currentPlayer: 'X',
                 nextBoard: null,
-                gameActive: true
+                gameActive: true,
+                bigWinner: null
             };
             document.getElementById('message').textContent = '';
+            document.getElementById('confettiCanvas').style.display = 'none';
             initGame();
         }
 
