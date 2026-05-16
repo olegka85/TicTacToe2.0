@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Крестики-Нолики 2.0</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 500px;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .player-turn {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 10px 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        .board-container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .big-board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .small-board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px;
+            background: rgba(255, 255, 255, 0.3);
+            padding: 2px;
+            border-radius: 8px;
+            aspect-ratio: 1;
+            min-width: 80px;
+            min-height: 80px;
+        }
+
+        .cell {
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            aspect-ratio: 1;
+            border-radius: 4px;
+            color: #333;
+        }
+
+        .cell:hover:not(.taken):not(.disabled) {
+            background: #fff;
+            transform: scale(1.05);
+        }
+
+        .cell.taken {
+            cursor: not-allowed;
+        }
+
+        .cell.disabled {
+            background: rgba(255, 255, 255, 0.3);
+            cursor: not-allowed;
+            color: rgba(0, 0, 0, 0.3);
+        }
+
+        .cell.x {
+            color: #e74c3c;
+        }
+
+        .cell.o {
+            color: #3498db;
+        }
+
+        .small-board.won {
+            background: rgba(46, 204, 113, 0.5);
+        }
+
+        .small-board.won-x {
+            background: rgba(231, 76, 60, 0.5);
+        }
+
+        .small-board.won-o {
+            background: rgba(52, 152, 219, 0.5);
+        }
+
+        .small-board.draw {
+            background: rgba(149, 165, 166, 0.5);
+        }
+
+        .active-board {
+            box-shadow: 0 0 15px rgba(255, 255, 0, 0.8);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 15px rgba(255, 255, 0, 0.8); }
+            50% { box-shadow: 0 0 25px rgba(255, 255, 0, 1); }
+            100% { box-shadow: 0 0 15px rgba(255, 255, 0, 0.8); }
+        }
+
+        .message {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            min-height: 30px;
+        }
+
+        .restart-btn {
+            margin-top: 20px;
+            padding: 12px 30px;
+            font-size: 16px;
+            background: #fff;
+            color: #667eea;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .restart-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        @media (max-width: 500px) {
+            h1 {
+                font-size: 20px;
+            }
+
+            .game-info {
+                font-size: 16px;
+                flex-direction: column;
+                gap: 10px;
+                align-items: center;
+            }
+
+            .small-board {
+                min-width: 60px;
+                min-height: 60px;
+            }
+
+            .cell {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🎮 Крестики-Нолики 2.0</h1>
+    
+    <div class="game-info">
+        <div class="player-turn">Ход: <span id="currentPlayer">X</span></div>
+        <div class="player-turn">Следующее поле: <span id="nextBoard">Любое</span></div>
+    </div>
+
+    <div class="board-container">
+        <div class="big-board" id="bigBoard"></div>
+    </div>
+
+    <div class="message" id="message"></div>
+    <button class="restart-btn" onclick="restartGame()">🔄 Новая игра</button>
+
+    <script>
+        let gameState = {
+            bigBoard: Array(9).fill(null),
+            smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
+            currentPlayer: 'X',
+            nextBoard: null,
+            gameActive: true
+        };
+
+        function initGame() {
+            const bigBoard = document.getElementById('bigBoard');
+            bigBoard.innerHTML = '';
+
+            for (let i = 0; i < 9; i++) {
+                const smallBoard = document.createElement('div');
+                smallBoard.className = 'small-board';
+                smallBoard.id = `board-${i}`;
+
+                for (let j = 0; j < 9; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-${i}-${j}`;
+                    cell.onclick = () => makeMove(i, j);
+                    smallBoard.appendChild(cell);
+                }
+
+                bigBoard.appendChild(smallBoard);
+            }
+
+            updateUI();
+        }
+
+        function makeMove(boardIndex, cellIndex) {
+            if (!gameState.gameActive) return;
+            if (gameState.bigBoard[boardIndex] !== null) return;
+            if (gameState.nextBoard !== null && gameState.nextBoard !== boardIndex) return;
+            if (gameState.smallBoards[boardIndex][cellIndex] !== null) return;
+
+            gameState.smallBoards[boardIndex][cellIndex] = gameState.currentPlayer;
+            
+            const winner = checkSmallBoardWinner(boardIndex);
+            if (winner) {
+                gameState.bigBoard[boardIndex] = winner;
+                updateSmallBoardVisual(boardIndex, winner);
+            } else if (gameState.smallBoards[boardIndex].every(cell => cell !== null)) {
+                gameState.bigBoard[boardIndex] = 'draw';
+                updateSmallBoardVisual(boardIndex, 'draw');
+            }
+
+            const bigWinner = checkBigBoardWinner();
+            if (bigWinner) {
+                gameState.gameActive = false;
+                document.getElementById('message').textContent = 
+                    bigWinner === 'draw' ? '🤝 Ничья!' : `🎉 Победил ${bigWinner}!`;
+            } else {
+                gameState.nextBoard = cellIndex;
+                if (gameState.bigBoard[cellIndex] !== null) {
+                    gameState.nextBoard = null;
+                }
+                gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
+            }
+
+            updateUI();
+        }
+
+        function checkSmallBoardWinner(boardIndex) {
+            const board = gameState.smallBoards[boardIndex];
+            const wins = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                [0, 4, 8], [2, 4, 6]
+            ];
+
+            for (const [a, b, c] of wins) {
+                if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                    return board[a];
+                }
+            }
+            return null;
+        }
+
+        function checkBigBoardWinner() {
+            const wins = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                [0, 4, 8], [2, 4, 6]
+            ];
+
+            for (const [a, b, c] of wins) {
+                if (gameState.bigBoard[a] && 
+                    gameState.bigBoard[a] !== 'draw' &&
+                    gameState.bigBoard[a] === gameState.bigBoard[b] && 
+                    gameState.bigBoard[a] === gameState.bigBoard[c]) {
+                    return gameState.bigBoard[a];
+                }
+            }
+
+            if (gameState.bigBoard.every(cell => cell !== null)) {
+                return 'draw';
+            }
+
+            return null;
+        }
+
+        function updateSmallBoardVisual(boardIndex, result) {
+            const smallBoard = document.getElementById(`board-${boardIndex}`);
+            smallBoard.className = 'small-board';
+            
+            if (result === 'X') {
+                smallBoard.classList.add('won-x');
+            } else if (result === 'O') {
+                smallBoard.classList.add('won-o');
+            } else if (result === 'draw') {
+                smallBoard.classList.add('draw');
+            }
+        }
+
+        function updateUI() {
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    const cell = document.getElementById(`cell-${i}-${j}`);
+                    const value = gameState.smallBoards[i][j];
+                    
+                    cell.textContent = value || '';
+                    cell.className = 'cell';
+                    
+                    if (value) {
+                        cell.classList.add('taken', value.toLowerCase());
+                    } else if (gameState.bigBoard[i] !== null) {
+                        cell.classList.add('disabled');
+                    } else if (gameState.nextBoard !== null && gameState.nextBoard !== i) {
+                        cell.classList.add('disabled');
+                    }
+                }
+
+                const smallBoard = document.getElementById(`board-${i}`);
+                if (gameState.nextBoard === i && gameState.bigBoard[i] === null && gameState.gameActive) {
+                    smallBoard.classList.add('active-board');
+                } else {
+                    smallBoard.classList.remove('active-board');
+                }
+            }
+
+            document.getElementById('currentPlayer').textContent = gameState.currentPlayer;
+            document.getElementById('nextBoard').textContent = 
+                gameState.nextBoard === null ? 'Любое' : gameState.nextBoard + 1;
+        }
+
+        function restartGame() {
+            gameState = {
+                bigBoard: Array(9).fill(null),
+                smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
+                currentPlayer: 'X',
+                nextBoard: null,
+                gameActive: true
+            };
+            document.getElementById('message').textContent = '';
+            initGame();
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
