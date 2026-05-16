@@ -298,31 +298,39 @@
             gameState.smallBoards[boardIndex][cellIndex] = gameState.currentPlayer;
             
             const winner = checkSmallBoardWinner(boardIndex);
+            
+            // ПРОВЕРКА ПОБЕДЫ: Если собрана линия в этом малом поле 3x3 - игрок выигрывает сразу!
             if (winner) {
-                gameState.bigBoard[boardIndex] = winner;
+                gameState.gameActive = false;
+                gameState.bigWinner = winner;
+                document.getElementById('message').textContent = `🎉 Победил ${winner}! Поздравляем! 🎊`;
                 updateSmallBoardVisual(boardIndex, winner);
-            } else if (gameState.smallBoards[boardIndex].every(cell => cell !== null)) {
+                startConfetti();
+                updateUI();
+                return;
+            }
+            
+            // Если нет победы, проверяем на ничью в малом поле
+            if (gameState.smallBoards[boardIndex].every(cell => cell !== null)) {
                 gameState.bigBoard[boardIndex] = 'draw';
                 updateSmallBoardVisual(boardIndex, 'draw');
             }
 
-            const bigWinner = checkBigBoardWinner();
-            if (bigWinner) {
+            // Проверка на ничью во всей игре (все поля заполнены)
+            if (gameState.bigBoard.every(cell => cell !== null)) {
                 gameState.gameActive = false;
-                gameState.bigWinner = bigWinner;
-                if (bigWinner === 'draw') {
-                    document.getElementById('message').textContent = '🤝 Ничья!';
-                } else {
-                    document.getElementById('message').textContent = `🎉 Победил ${bigWinner}! Поздравляем! 🎊`;
-                    startConfetti();
-                }
-            } else {
-                gameState.nextBoard = cellIndex;
-                if (gameState.bigBoard[cellIndex] !== null) {
-                    gameState.nextBoard = null;
-                }
-                gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
+                gameState.bigWinner = 'draw';
+                document.getElementById('message').textContent = '🤝 Ничья!';
+                updateUI();
+                return;
             }
+
+            // Определение следующего поля
+            gameState.nextBoard = cellIndex;
+            if (gameState.bigBoard[cellIndex] !== null) {
+                gameState.nextBoard = null;
+            }
+            gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
 
             updateUI();
         }
