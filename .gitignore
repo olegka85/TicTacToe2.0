@@ -1,16 +1,1 @@
-```
-# Dependencies
-node_modules/
-
-# Environment
-.env
-.env.local
-.env.*
-
-# Logs and temp files
-*.log
-*.tmp
-
-# Editors
-.vscode/
-```
+Nothing should be ignored since only a source file (`index.html`) was modified and there are no build artifacts, dependencies, or temporary files in the changes.
