@@ -20,7 +20,7 @@ jobs:
 
       - name: Check shared and client syntax
         run: |
-          node --check game-rules.js
+          node --check server/game-rules.js
           node --check app.js
 
       - name: Install server dependencies
