@@ -2,201 +2,271 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const GameRules = require('../game-rules');
 
 const app = express();
 app.use(cors());
+app.get('/health', (_req, res) => {
+    res.json({ ok: true, service: 'tictactoe-socket' });
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST']
+    }
 });
 
-// Хранилище игр в памяти (для продакшена лучше использовать Redis или базу данных)
-const games = {};
+const games = new Map();
+const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const WAITING_ROOM_TTL_MS = 30 * 60 * 1000;
+
+function createRoomId() {
+    let roomId;
+    do {
+        roomId = Array.from({ length: 6 }, () => ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)]).join('');
+    } while (games.has(roomId));
+    return roomId;
+}
+
+function normalizeRoomId(value) {
+    const raw = typeof value === 'string' ? value : value && value.roomId;
+    return typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+}
+
+function getPlayerId(game, socketId) {
+    if (game.players.X === socketId) return 'X';
+    if (game.players.O === socketId) return 'O';
+    return null;
+}
+
+function getStatus(game) {
+    if (!game.players.O) return 'waiting';
+    if (!game.state.gameActive) return 'finished';
+    return 'playing';
+}
+
+function buildStatePayload(game, playerId) {
+    return {
+        roomId: game.id,
+        playerId,
+        status: getStatus(game),
+        players: {
+            X: Boolean(game.players.X),
+            O: Boolean(game.players.O)
+        },
+        state: GameRules.cloneState(game.state)
+    };
+}
+
+function emitState(game) {
+    for (const playerId of ['X', 'O']) {
+        const socketId = game.players[playerId];
+        if (!socketId) continue;
+        const playerSocket = io.sockets.sockets.get(socketId);
+        if (playerSocket) {
+            playerSocket.emit('gameState', buildStatePayload(game, playerId));
+        }
+    }
+}
+
+function emitGameError(socket, message) {
+    socket.emit('gameError', { message });
+}
+
+function clearSocketRoomData(socket) {
+    socket.data.roomId = null;
+    socket.data.playerId = null;
+}
+
+function leaveCurrentGame(socket, options = {}) {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+
+    const game = games.get(roomId);
+    clearSocketRoomData(socket);
+    socket.leave(roomId);
+
+    if (!game) return;
+
+    const playerId = getPlayerId(game, socket.id);
+    if (!playerId) return;
+
+    if (playerId === 'X') {
+        const opponentSocketId = game.players.O;
+        games.delete(roomId);
+
+        if (opponentSocketId) {
+            const opponentSocket = io.sockets.sockets.get(opponentSocketId);
+            if (opponentSocket) {
+                opponentSocket.leave(roomId);
+                clearSocketRoomData(opponentSocket);
+                opponentSocket.emit('roomClosed', {
+                    message: options.disconnected
+                        ? 'Создатель комнаты отключился. Комната закрыта.'
+                        : 'Создатель комнаты вышел. Комната закрыта.'
+                });
+            }
+        }
+        return;
+    }
+
+    game.players.O = null;
+    game.state = GameRules.createInitialState();
+    game.updatedAt = Date.now();
+
+    const creatorSocket = io.sockets.sockets.get(game.players.X);
+    if (creatorSocket) {
+        creatorSocket.emit('opponentLeft', {
+            message: options.disconnected
+                ? 'Второй игрок отключился. Ожидание нового игрока.'
+                : 'Второй игрок вышел. Ожидание нового игрока.'
+        });
+    }
+    emitState(game);
+}
 
 io.on('connection', (socket) => {
-  console.log(`Игрок подключился: ${socket.id}`);
+    console.log(`Игрок подключился: ${socket.id}`);
 
-  // Создание новой игры
-  socket.on('createGame', () => {
-    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    games[roomId] = {
-      id: roomId,
-      players: {
-        X: socket.id,
-        O: null
-      },
-      currentPlayer: 'X',
-      smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
-      bigBoard: Array(9).fill(null),
-      nextBoard: null, // null означает, что можно ходить куда угодно
-      gameActive: true,
-      winner: null,
-      createdAt: Date.now()
-    };
+    socket.on('createGame', () => {
+        leaveCurrentGame(socket);
 
-    socket.join(roomId);
-    socket.emit('gameCreated', { roomId, playerId: 'X' });
-    console.log(`Игра создана: ${roomId}`);
-  });
+        const roomId = createRoomId();
+        const game = {
+            id: roomId,
+            players: { X: socket.id, O: null },
+            state: GameRules.createInitialState(),
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
 
-  // Присоединение к игре
-  socket.on('joinGame', (roomId) => {
-    const game = games[roomId];
-    
-    if (!game) {
-      socket.emit('error', 'Игра не найдена');
-      return;
-    }
-
-    if (game.players.O !== null) {
-      socket.emit('error', 'Игра уже заполнена');
-      return;
-    }
-
-    game.players.O = socket.id;
-    socket.join(roomId);
-    socket.emit('gameJoined', { roomId, playerId: 'O' });
-    
-    // Уведомляем обоих игроков о начале игры
-    io.to(roomId).emit('gameStart', {
-      players: game.players,
-      currentPlayer: game.currentPlayer
+        games.set(roomId, game);
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+        socket.data.playerId = 'X';
+        emitState(game);
+        console.log(`Игра создана: ${roomId}`);
     });
-    
-    console.log(`Игрок присоединился к игре: ${roomId}`);
-  });
 
-  // Обработка хода
-  socket.on('makeMove', ({ roomId, cellIndex, playerId }) => {
-    const game = games[roomId];
-    
-    if (!game || !game.gameActive) {
-      socket.emit('error', 'Игра не активна');
-      return;
-    }
+    socket.on('joinGame', (payload) => {
+        const roomId = normalizeRoomId(payload);
+        if (!/^[A-Z2-9]{6}$/.test(roomId)) {
+            emitGameError(socket, 'Некорректный код комнаты');
+            return;
+        }
 
-    // Проверка, что ход делает правильный игрок
-    if ((playerId === 'X' && socket.id !== game.players.X) || 
-        (playerId === 'O' && socket.id !== game.players.O)) {
-      socket.emit('error', 'Не ваш ход');
-      return;
-    }
+        const game = games.get(roomId);
+        if (!game) {
+            emitGameError(socket, 'Игра не найдена');
+            return;
+        }
+        if (game.players.X === socket.id) {
+            emitGameError(socket, 'Вы уже создали эту комнату');
+            return;
+        }
+        if (game.players.O && game.players.O !== socket.id) {
+            emitGameError(socket, 'Игра уже заполнена');
+            return;
+        }
 
-    if (game.currentPlayer !== playerId) {
-      socket.emit('error', 'Сейчас не ваш ход');
-      return;
-    }
+        leaveCurrentGame(socket);
+        game.players.O = socket.id;
+        game.state = GameRules.createInitialState();
+        game.updatedAt = Date.now();
 
-    // Проверка, что ход разрешён в это поле
-    if (game.nextBoard !== null) {
-      const boardIndex = Math.floor(cellIndex / 9);
-      if (boardIndex !== game.nextBoard) {
-        socket.emit('error', `Нужно ходить в поле ${game.nextBoard + 1}`);
-        return;
-      }
-    }
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+        socket.data.playerId = 'O';
 
-    // Проверка, что клетка свободна
-    if (game.smallBoards[cellIndex] !== null) {
-      socket.emit('error', 'Клетка занята');
-      return;
-    }
-
-    // Совершаем ход
-    game.smallBoards[cellIndex] = playerId;
-    
-    // Проверяем победу в малом поле 3x3
-    const boardIndex = Math.floor(cellIndex / 9);
-    const boardStart = boardIndex * 9;
-    const boardCells = game.smallBoards.slice(boardStart, boardStart + 9);
-    
-    const winPatterns = [
-      [0, 1, 2], [3, 4, 5], [6, 7, 8], // горизонтали
-      [0, 3, 6], [1, 4, 7], [2, 5, 8], // вертикали
-      [0, 4, 8], [2, 4, 6]             // диагонали
-    ];
-
-    let boardWinner = null;
-    for (const pattern of winPatterns) {
-      const [a, b, c] = pattern;
-      if (boardCells[a] && boardCells[a] === boardCells[b] && boardCells[a] === boardCells[c]) {
-        boardWinner = playerId;
-        break;
-      }
-    }
-
-    if (boardWinner) {
-      game.bigBoard[boardIndex] = boardWinner;
-      game.gameActive = false;
-      game.winner = boardWinner;
-      
-      io.to(roomId).emit('gameOver', {
-        winner: boardWinner,
-        winningBoard: boardIndex
-      });
-      console.log(`Игра ${roomId} завершена. Победитель: ${boardWinner}`);
-      return;
-    }
-
-    // Проверяем ничью (все клетки заполнены)
-    if (!game.smallBoards.includes(null)) {
-      game.gameActive = false;
-      io.to(roomId).emit('gameOver', { winner: 'draw' });
-      console.log(`Игра ${roomId} завершена вничью`);
-      return;
-    }
-
-    // Определяем следующее поле для хода
-    const nextCellInSmallBoard = cellIndex % 9;
-    if (game.bigBoard[nextCellInSmallBoard] === null) {
-      game.nextBoard = nextCellInSmallBoard;
-    } else {
-      game.nextBoard = null; // Можно ходить куда угодно
-    }
-
-    // Передаём ход другому игроку
-    game.currentPlayer = playerId === 'X' ? 'O' : 'X';
-
-    // Отправляем обновлённое состояние всем игрокам
-    io.to(roomId).emit('moveMade', {
-      cellIndex,
-      playerId,
-      nextBoard: game.nextBoard,
-      currentPlayer: game.currentPlayer,
-      smallBoards: game.smallBoards,
-      bigBoard: game.bigBoard
+        emitState(game);
+        console.log(`Игрок O присоединился к игре: ${roomId}`);
     });
-  });
 
-  // Игрок отключился
-  socket.on('disconnect', () => {
-    console.log(`Игрок отключился: ${socket.id}`);
-    
-    // Находим игру, в которой был этот игрок
-    for (const roomId in games) {
-      const game = games[roomId];
-      if (game.players.X === socket.id || game.players.O === socket.id) {
-        io.to(roomId).emit('playerDisconnected', {
-          playerId: game.players.X === socket.id ? 'X' : 'O'
-        });
-        
-        // Очищаем игру через 5 минут
-        setTimeout(() => {
-          delete games[roomId];
-          console.log(`Игра ${roomId} удалена`);
-        }, 300000);
-        break;
-      }
-    }
-  });
+    socket.on('makeMove', (payload = {}) => {
+        const roomId = normalizeRoomId(payload);
+        const game = games.get(roomId);
+
+        if (!game) {
+            emitGameError(socket, 'Игра не найдена');
+            return;
+        }
+
+        const playerId = getPlayerId(game, socket.id);
+        if (!playerId || socket.data.roomId !== roomId) {
+            emitGameError(socket, 'Вы не участвуете в этой игре');
+            return;
+        }
+        if (!game.players.O) {
+            emitGameError(socket, 'Ожидаем второго игрока');
+            return;
+        }
+
+        const boardIndex = Number(payload.boardIndex);
+        const cellIndex = Number(payload.cellIndex);
+        const result = GameRules.applyMove(game.state, boardIndex, cellIndex, playerId);
+
+        if (!result.ok) {
+            emitGameError(socket, result.error);
+            emitState(game);
+            return;
+        }
+
+        game.state = result.state;
+        game.updatedAt = Date.now();
+        emitState(game);
+    });
+
+    socket.on('restartGame', (payload = {}) => {
+        const roomId = normalizeRoomId(payload) || socket.data.roomId;
+        const game = games.get(roomId);
+
+        if (!game) {
+            emitGameError(socket, 'Игра не найдена');
+            return;
+        }
+        if (!getPlayerId(game, socket.id)) {
+            emitGameError(socket, 'Вы не участвуете в этой игре');
+            return;
+        }
+        if (!game.players.O) {
+            emitGameError(socket, 'Нельзя начать игру без второго игрока');
+            return;
+        }
+
+        game.state = GameRules.createInitialState();
+        game.updatedAt = Date.now();
+        emitState(game);
+    });
+
+    socket.on('leaveGame', () => {
+        leaveCurrentGame(socket);
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`Игрок отключился: ${socket.id}`);
+        leaveCurrentGame(socket, { disconnected: true });
+    });
 });
+
+const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [roomId, game] of games.entries()) {
+        if (!game.players.O && now - game.updatedAt > WAITING_ROOM_TTL_MS) {
+            const creatorSocket = io.sockets.sockets.get(game.players.X);
+            if (creatorSocket) {
+                creatorSocket.leave(roomId);
+                clearSocketRoomData(creatorSocket);
+                creatorSocket.emit('roomClosed', { message: 'Комната закрыта из-за долгого ожидания.' });
+            }
+            games.delete(roomId);
+        }
+    }
+}, 60 * 1000);
+cleanupTimer.unref();
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
+    console.log(`Сервер запущен на порту ${PORT}`);
 });
