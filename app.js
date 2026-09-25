@@ -3,7 +3,7 @@
 const SERVER_URL = new URLSearchParams(window.location.search).get('server') ||
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
-        : 'https://botbonus.ru');
+        : 'https://tictactoe-socket-production-7951.up.railway.app');
 
 let socket = null;
 let socketConnectPromise = null;
