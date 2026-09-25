@@ -1,0 +1,33 @@
+name: Production Multiplayer Smoke
+
+on:
+  pull_request:
+    paths:
+      - "smoke/**"
+      - ".github/workflows/production-smoke.yml"
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  multiplayer-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install smoke client
+        run: npm install --prefix /tmp/tictactoe-smoke --no-save socket.io-client@4.6.1
+
+      - name: Verify production multiplayer
+        env:
+          NODE_PATH: /tmp/tictactoe-smoke/node_modules
+          SOCKET_URL: https://tictactoe-socket-production-7951.up.railway.app
+        run: node smoke/production-multiplayer.js
