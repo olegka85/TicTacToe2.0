@@ -1,5 +1,5 @@
 const assert = require('assert');
-const GameRules = require('../game-rules');
+const GameRules = require('./game-rules');
 
 function test(name, fn) {
     try {
