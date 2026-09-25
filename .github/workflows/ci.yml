@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check shared and client syntax
+        run: |
+          node --check game-rules.js
+          node --check app.js
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm install --ignore-scripts
+
+      - name: Check server syntax
+        working-directory: server
+        run: node --check server.js
+
+      - name: Run game rule tests
+        working-directory: server
+        run: npm test
