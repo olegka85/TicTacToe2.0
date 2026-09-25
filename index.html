@@ -4,684 +4,287 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Крестики-Нолики 2.0</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        [hidden] { display: none !important; }
+
+        :root {
+            color-scheme: dark;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: max(16px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+            overflow-x: hidden;
             color: #fff;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
 
         h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
+            margin-bottom: 14px;
+            text-align: center;
+            font-size: clamp(22px, 5vw, 30px);
+        }
+
+        button, input { font: inherit; }
+
+        .menu, .form-panel {
+            width: min(92vw, 520px);
             text-align: center;
         }
 
-        .game-info {
+        .menu {
             display: flex;
-            justify-content: space-between;
-            width: 100%;
-            max-width: 500px;
-            margin-bottom: 15px;
-            font-size: 18px;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .form-panel {
+            padding: 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(10px);
+        }
+
+        .room-code {
+            margin: 8px 0 2px;
+            color: #ffe36e;
+            font-size: clamp(28px, 8vw, 40px);
+            letter-spacing: 0.14em;
+        }
+
+        .helper-text {
+            margin: 8px 0 12px;
+            opacity: 0.9;
+        }
+
+        .room-input {
+            width: min(280px, 100%);
+            padding: 12px 14px;
+            border: 0;
+            border-radius: 10px;
+            outline: none;
+            text-align: center;
+            text-transform: uppercase;
+            color: #222;
+            background: #fff;
+            font-size: 20px;
+            letter-spacing: 0.18em;
+        }
+
+        .action-btn {
+            margin: 8px 4px 0;
+            padding: 12px 22px;
+            border: 0;
+            border-radius: 999px;
+            cursor: pointer;
+            color: #5e63cc;
+            background: #fff;
+            font-weight: 700;
+            box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.25);
+        }
+
+        .action-btn.secondary {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .action-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+            transform: none;
+        }
+
+        #connectionStatus {
+            width: min(92vw, 520px);
+            min-height: 22px;
+            margin: 10px 0;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        #gameContainer { width: min(94vw, 540px); }
+
+        .game-info {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
         .player-turn {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 10px 20px;
-            border-radius: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.18);
             backdrop-filter: blur(10px);
         }
 
         .board-container {
+            width: 100%;
+            padding: clamp(7px, 2vw, 14px);
+            border-radius: 18px;
             background: rgba(255, 255, 255, 0.1);
-            padding: 15px;
-            border-radius: 15px;
+            box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
             backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
 
         .big-board {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: clamp(5px, 1.6vw, 10px);
+            width: 100%;
+            aspect-ratio: 1;
         }
 
         .small-board {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-rows: repeat(3, minmax(0, 1fr));
             gap: 2px;
-            background: rgba(255, 255, 255, 0.3);
+            min-width: 0;
+            min-height: 0;
             padding: 2px;
-            border-radius: 8px;
-            aspect-ratio: 1;
-            min-width: 80px;
-            min-height: 80px;
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.28);
+            transition: box-shadow 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+        }
+
+        .small-board.won-x { background: rgba(231, 76, 60, 0.6); }
+        .small-board.won-o { background: rgba(52, 152, 219, 0.6); }
+        .small-board.draw { background: rgba(149, 165, 166, 0.55); }
+
+        .small-board.active-board {
+            box-shadow: 0 0 0 2px rgba(255, 232, 80, 0.95), 0 0 18px rgba(255, 232, 80, 0.8);
         }
 
         .cell {
-            background: rgba(255, 255, 255, 0.9);
             display: flex;
+            min-width: 0;
+            min-height: 0;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            aspect-ratio: 1;
             border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
             color: #333;
+            background: rgba(255, 255, 255, 0.94);
+            font-size: clamp(14px, 5.5vw, 25px);
+            font-weight: 800;
+            transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
         }
 
         .cell:hover:not(.taken):not(.disabled) {
+            transform: scale(1.04);
             background: #fff;
-            transform: scale(1.05);
         }
 
-        .cell.taken {
-            cursor: not-allowed;
-        }
+        .cell.x { color: #d9362b; }
+        .cell.o { color: #2777bd; }
 
-        .cell.disabled {
-            background: rgba(255, 255, 255, 0.3);
-            cursor: not-allowed;
-            color: rgba(0, 0, 0, 0.3);
-        }
-
-        .cell.x {
-            color: #e74c3c;
-        }
-
-        .cell.o {
-            color: #3498db;
-        }
-
-        .small-board.won {
-            background: rgba(46, 204, 113, 0.5);
-        }
-
-        .small-board.won-x {
-            background: rgba(231, 76, 60, 0.5);
-        }
-
-        .small-board.won-o {
-            background: rgba(52, 152, 219, 0.5);
-        }
-
-        .small-board.draw {
-            background: rgba(149, 165, 166, 0.5);
-        }
-
-        .active-board {
-            box-shadow: 0 0 15px rgba(255, 255, 0, 0.8);
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { box-shadow: 0 0 15px rgba(255, 255, 0, 0.8); }
-            50% { box-shadow: 0 0 25px rgba(255, 255, 0, 1); }
-            100% { box-shadow: 0 0 15px rgba(255, 255, 0, 0.8); }
-        }
+        .cell.taken, .cell.disabled { cursor: default; }
+        .cell.disabled:not(.taken) { opacity: 0.38; }
 
         .message {
-            margin-top: 20px;
-            font-size: 20px;
-            font-weight: bold;
+            min-height: 34px;
+            margin-top: 12px;
             text-align: center;
-            min-height: 30px;
+            font-size: clamp(17px, 4.5vw, 22px);
+            font-weight: 800;
         }
 
-        .restart-btn {
-            margin-top: 20px;
-            padding: 12px 30px;
-            font-size: 16px;
-            background: #fff;
-            color: #667eea;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        .game-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 4px;
         }
 
-        .restart-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        #confettiCanvas {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }
 
-        @media (max-width: 500px) {
-            h1 {
-                font-size: 20px;
-            }
-
-            .game-info {
-                font-size: 16px;
-                flex-direction: column;
-                gap: 10px;
-                align-items: center;
-            }
-
-            .small-board {
-                min-width: 60px;
-                min-height: 60px;
-            }
-
-            .cell {
-                font-size: 16px;
-            }
+        @media (max-width: 420px) {
+            body { justify-content: flex-start; }
+            .game-info { font-size: 14px; }
+            .action-btn { padding: 11px 18px; }
         }
     </style>
 </head>
 <body>
     <h1>🎮 Крестики-Нолики 2.0</h1>
-    
-    <!-- Главное меню -->
-    <div id="mainMenu" style="text-align: center; margin-bottom: 20px;">
-        <button class="restart-btn" onclick="startLocalGame()">📱 На одном устройстве</button>
-        <button class="restart-btn" onclick="showMultiplayerMenu()">🌐 Онлайн игра</button>
+
+    <div id="mainMenu" class="menu">
+        <button class="action-btn" type="button" onclick="startLocalGame()">📱 На одном устройстве</button>
+        <button class="action-btn" type="button" onclick="showMultiplayerMenu()">🌐 Онлайн игра</button>
     </div>
-    
-    <!-- Меню мультиплеера -->
-    <div id="multiplayerMenu" style="display: none; text-align: center; margin-bottom: 20px;">
-        <button class="restart-btn" onclick="showCreateGame()">🆕 Создать комнату</button>
-        <button class="restart-btn" onclick="showJoinGame()">🎮 Войти в комнату</button>
-        <button class="restart-btn" onclick="backToMainMenu()" style="background: rgba(255,255,255,0.3);">↩️ Назад</button>
+
+    <div id="multiplayerMenu" class="menu" hidden>
+        <button class="action-btn" type="button" onclick="showCreateGame()">🆕 Создать комнату</button>
+        <button class="action-btn" type="button" onclick="showJoinGame()">🎮 Войти в комнату</button>
+        <button class="action-btn secondary" type="button" onclick="backToMainMenu()">↩️ Назад</button>
     </div>
-    
-    <!-- Форма создания игры -->
-    <div id="createGameContainer" style="display: none; text-align: center; margin-bottom: 20px;">
-        <p style="color: white; margin-bottom: 10px;">Ваш код игры: <strong id="gameCodeDisplay" style="font-size: 24px; color: #ffd700;"></strong></p>
-        <p style="color: white; font-size: 14px; margin-bottom: 15px;">Отправьте этот код второму игроку</p>
-        <button class="restart-btn" onclick="copyGameCode()">📋 Копировать код</button>
-        <button class="restart-btn" onclick="cancelGame()">❌ Отмена</button>
+
+    <div id="createGameContainer" class="form-panel" hidden>
+        <div>Ваш код игры</div>
+        <div id="gameCodeDisplay" class="room-code"></div>
+        <div class="helper-text">Отправьте код второму игроку. Игра начнётся автоматически после входа.</div>
+        <button class="action-btn" type="button" onclick="copyGameCode()">📋 Копировать код</button>
+        <button class="action-btn secondary" type="button" onclick="cancelGame()">❌ Отмена</button>
     </div>
-    
-    <!-- Форма входа в игру -->
-    <div id="joinGameContainer" style="display: none; text-align: center; margin-bottom: 20px;">
-        <input type="text" id="roomCodeInput" placeholder="Введите код игры" maxlength="6" 
-               style="padding: 10px; font-size: 18px; border-radius: 8px; border: none; text-align: center; letter-spacing: 3px; text-transform: uppercase; width: 200px; margin-bottom: 10px;">
-        <br>
-        <button class="restart-btn" onclick="joinGame()">🎮 Войти</button>
-        <button class="restart-btn" onclick="cancelJoin()">❌ Отмена</button>
+
+    <div id="joinGameContainer" class="form-panel" hidden>
+        <input id="roomCodeInput" class="room-input" type="text" inputmode="text" autocomplete="off" maxlength="6" placeholder="КОД ИГРЫ">
+        <div>
+            <button class="action-btn" type="button" onclick="joinGame()">🎮 Войти</button>
+            <button class="action-btn secondary" type="button" onclick="cancelJoin()">❌ Отмена</button>
+        </div>
     </div>
-    
-    <!-- Статус подключения -->
-    <div id="connectionStatus" style="text-align: center; color: white; margin-bottom: 10px; font-size: 14px;"></div>
-    
-    <!-- Игровое поле (скрыто до начала игры) -->
-    <div id="gameContainer" style="display: none;">
+
+    <div id="connectionStatus" aria-live="polite"></div>
+
+    <div id="gameContainer" hidden>
         <div class="game-info">
-            <div class="player-turn">Ход: <span id="currentPlayer">X</span></div>
-            <div class="player-turn">Следующее поле: <span id="nextBoard">Любое</span></div>
+            <div class="player-turn">Ход: <strong id="currentPlayer">X</strong></div>
+            <div class="player-turn">Следующее поле: <strong id="nextBoard">Любое</strong></div>
         </div>
 
         <div class="board-container">
-            <div class="big-board" id="bigBoard"></div>
+            <div id="bigBoard" class="big-board" aria-label="Игровое поле 9 на 9"></div>
         </div>
 
-        <div class="message" id="message"></div>
-        
-        <button class="restart-btn" onclick="restartGame()" style="display: none;" id="restartBtn">🔄 Новая игра</button>
+        <div id="message" class="message" aria-live="polite"></div>
+
+        <div class="game-actions">
+            <button id="restartBtn" class="action-btn" type="button" onclick="restartGame()">🔄 Новая игра</button>
+            <button id="exitGameBtn" class="action-btn secondary" type="button" onclick="exitGame()">↩️ В меню</button>
+        </div>
     </div>
 
-    <canvas id="confettiCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; display: none;"></canvas>
+    <canvas id="confettiCanvas"></canvas>
 
-    <script>
-        // Глобальные переменные для мультиплеера
-        let socket = null;
-        let roomId = null;
-        let myPlayerId = null;
-        let isMultiplayer = false;
-        
-        let gameState = {
-            bigBoard: Array(9).fill(null),
-            smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
-            currentPlayer: 'X',
-            nextBoard: null,
-            gameActive: true,
-            bigWinner: null
-        };
-
-        // Функции навигации по меню
-        function startLocalGame() {
-            document.getElementById('mainMenu').style.display = 'none';
-            document.getElementById('gameContainer').style.display = 'block';
-            initGame();
-        }
-
-        function showMultiplayerMenu() {
-            document.getElementById('mainMenu').style.display = 'none';
-            document.getElementById('multiplayerMenu').style.display = 'block';
-        }
-
-        function backToMainMenu() {
-            document.getElementById('multiplayerMenu').style.display = 'none';
-            document.getElementById('mainMenu').style.display = 'block';
-            cancelGame();
-        }
-
-        // Инициализация Socket.io
-        function initSocket(serverUrl) {
-            socket = io(serverUrl);
-            
-            socket.on('connect', () => {
-                console.log('Подключено к серверу');
-                updateConnectionStatus('🟢 Подключено', 'green');
-            });
-            
-            socket.on('disconnect', () => {
-                console.log('Отключено от сервера');
-                updateConnectionStatus('🔴 Отключено', 'red');
-            });
-            
-            socket.on('gameCreated', (data) => {
-                roomId = data.roomId;
-                myPlayerId = data.playerId;
-                isMultiplayer = true;
-                
-                document.getElementById('gameCodeDisplay').textContent = roomId;
-                document.getElementById('createGameContainer').style.display = 'block';
-                document.getElementById('multiplayerMenu').style.display = 'none';
-                updateConnectionStatus(`Ожидание второго игрока... Код: ${roomId}`, 'yellow');
-                
-                // Показываем контейнер игры
-                document.getElementById('gameContainer').style.display = 'block';
-                // Скрываем доску пока не начнётся игра
-                document.getElementById('bigBoard').style.opacity = '0.5';
-                document.getElementById('bigBoard').style.pointerEvents = 'none';
-            });
-            
-            socket.on('gameJoined', (data) => {
-                roomId = data.roomId;
-                myPlayerId = data.playerId;
-                isMultiplayer = true;
-                
-                document.getElementById('joinGameContainer').style.display = 'none';
-                document.getElementById('gameContainer').style.display = 'block';
-                updateConnectionStatus('Игра началась!', 'green');
-                
-                document.getElementById('bigBoard').style.opacity = '1';
-                document.getElementById('bigBoard').style.pointerEvents = 'auto';
-                document.getElementById('restartBtn').style.display = 'inline-block';
-            });
-            
-            socket.on('gameStart', (data) => {
-                updateConnectionStatus(`Ход игрока: ${data.currentPlayer}`, 'green');
-                document.getElementById('bigBoard').style.opacity = '1';
-                document.getElementById('bigBoard').style.pointerEvents = 'auto';
-                document.getElementById('restartBtn').style.display = 'inline-block';
-            });
-            
-            socket.on('moveMade', (data) => {
-                gameState.smallBoards = data.smallBoards;
-                gameState.bigBoard = data.bigBoard;
-                gameState.nextBoard = data.nextBoard;
-                gameState.currentPlayer = data.currentPlayer;
-                
-                updateUI();
-                
-                if (myPlayerId === gameState.currentPlayer) {
-                    updateConnectionStatus('Ваш ход!', 'green');
-                } else {
-                    updateConnectionStatus('Ход соперника...', 'yellow');
-                }
-            });
-            
-            socket.on('gameOver', (data) => {
-                gameState.gameActive = false;
-                
-                if (data.winner === 'draw') {
-                    document.getElementById('message').textContent = '🤝 Ничья!';
-                } else {
-                    const winnerText = data.winner === myPlayerId ? '🎉 Вы победили! Поздравляем! 🎊' : `😔 Победил игрок ${data.winner}`;
-                    document.getElementById('message').textContent = winnerText;
-                    
-                    if (data.winner === myPlayerId) {
-                        startConfetti();
-                    }
-                }
-                
-                updateConnectionStatus('Игра завершена', 'white');
-            });
-            
-            socket.on('playerDisconnected', (data) => {
-                updateConnectionStatus(`⚠️ Игрок ${data.playerId} отключился`, 'orange');
-                document.getElementById('bigBoard').style.opacity = '0.5';
-                document.getElementById('bigBoard').style.pointerEvents = 'none';
-            });
-            
-            socket.on('error', (msg) => {
-                alert('Ошибка: ' + msg);
-                updateConnectionStatus('Ошибка подключения', 'red');
-            });
-        }
-        
-        function updateConnectionStatus(text, color) {
-            document.getElementById('connectionStatus').textContent = text;
-            document.getElementById('connectionStatus').style.color = color;
-        }
-        
-        function showCreateGame() {
-            // Используем публичный сервер или локальный
-            const serverUrl = 'https://botbonus.ru/'; // Ваш сервер
-            // Для тестов можно использовать localhost:3000 если запускаете локально
-            // const serverUrl = 'http://localhost:3000';
-            
-            if (!socket) {
-                initSocket(serverUrl);
-            }
-            
-            socket.emit('createGame');
-        }
-        
-        function showJoinGame() {
-            document.getElementById('joinGameContainer').style.display = 'block';
-            document.getElementById('multiplayerMenu').style.display = 'none';
-        }
-        
-        function joinGame() {
-            const roomCode = document.getElementById('roomCodeInput').value.toUpperCase().trim();
-            
-            if (!roomCode || roomCode.length !== 6) {
-                alert('Введите корректный код игры (6 символов)');
-                return;
-            }
-            
-            const serverUrl = 'https://botbonus.ru/'; // Ваш сервер
-            // const serverUrl = 'http://localhost:3000';
-            
-            if (!socket) {
-                initSocket(serverUrl);
-            }
-            
-            setTimeout(() => {
-                socket.emit('joinGame', roomCode);
-            }, 500);
-        }
-        
-        function cancelGame() {
-            document.getElementById('createGameContainer').style.display = 'none';
-            document.getElementById('multiplayerMenu').style.display = 'block';
-            document.getElementById('bigBoard').style.opacity = '1';
-            document.getElementById('bigBoard').style.pointerEvents = 'auto';
-        }
-        
-        function cancelJoin() {
-            document.getElementById('joinGameContainer').style.display = 'none';
-            document.getElementById('multiplayerMenu').style.display = 'block';
-        }
-        
-        function copyGameCode() {
-            const code = document.getElementById('gameCodeDisplay').textContent;
-            navigator.clipboard.writeText(code).then(() => {
-                alert('Код скопирован в буфер обмена!');
-            }).catch(() => {
-                alert('Не удалось скопировать код');
-            });
-        }
-
-        // Конфетти эффект
-        function startConfetti() {
-            const canvas = document.getElementById('confettiCanvas');
-            canvas.style.display = 'block';
-            const ctx = canvas.getContext('2d');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-
-            const particles = [];
-            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500', '#ff69b4'];
-
-            for (let i = 0; i < 300; i++) {
-                particles.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height - canvas.height,
-                    size: Math.random() * 10 + 5,
-                    speedY: Math.random() * 3 + 2,
-                    speedX: Math.random() * 2 - 1,
-                    color: colors[Math.floor(Math.random() * colors.length)],
-                    rotation: Math.random() * 360,
-                    rotationSpeed: Math.random() * 10 - 5
-                });
-            }
-
-            function animate() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                particles.forEach(p => {
-                    ctx.save();
-                    ctx.translate(p.x, p.y);
-                    ctx.rotate(p.rotation * Math.PI / 180);
-                    ctx.fillStyle = p.color;
-                    ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-                    ctx.restore();
-
-                    p.y += p.speedY;
-                    p.x += p.speedX;
-                    p.rotation += p.rotationSpeed;
-
-                    if (p.y > canvas.height) {
-                        p.y = -p.size;
-                        p.x = Math.random() * canvas.width;
-                    }
-                });
-
-                if (gameState.gameActive === false && gameState.bigWinner) {
-                    requestAnimationFrame(animate);
-                } else {
-                    canvas.style.display = 'none';
-                }
-            }
-
-            animate();
-        }
-
-        function initGame() {
-            const bigBoard = document.getElementById('bigBoard');
-            bigBoard.innerHTML = '';
-
-            for (let i = 0; i < 9; i++) {
-                const smallBoard = document.createElement('div');
-                smallBoard.className = 'small-board';
-                smallBoard.id = `board-${i}`;
-
-                for (let j = 0; j < 9; j++) {
-                    const cell = document.createElement('div');
-                    cell.className = 'cell';
-                    cell.id = `cell-${i}-${j}`;
-                    cell.onclick = () => makeMove(i, j);
-                    smallBoard.appendChild(cell);
-                }
-
-                bigBoard.appendChild(smallBoard);
-            }
-
-            updateUI();
-        }
-
-        function makeMove(boardIndex, cellIndex) {
-            // Если это мультиплеерная игра и сейчас мой ход
-            if (isMultiplayer && socket && roomId && myPlayerId) {
-                // Проверка, что сейчас мой ход
-                if (gameState.currentPlayer !== myPlayerId) {
-                    alert('Сейчас не ваш ход!');
-                    return;
-                }
-                
-                // Отправляем ход на сервер
-                socket.emit('makeMove', {
-                    roomId: roomId,
-                    cellIndex: boardIndex * 9 + cellIndex,
-                    playerId: myPlayerId
-                });
-                return;
-            }
-            
-            // Локальная игра (один экран)
-            if (!gameState.gameActive) return;
-            if (gameState.bigBoard[boardIndex] !== null) return;
-            if (gameState.nextBoard !== null && gameState.nextBoard !== boardIndex) return;
-            if (gameState.smallBoards[boardIndex][cellIndex] !== null) return;
-
-            gameState.smallBoards[boardIndex][cellIndex] = gameState.currentPlayer;
-            
-            const winner = checkSmallBoardWinner(boardIndex);
-            
-            // ПРОВЕРКА ПОБЕДЫ: Если собрана линия в этом малом поле 3x3 - игрок выигрывает сразу!
-            if (winner) {
-                gameState.gameActive = false;
-                gameState.bigWinner = winner;
-                document.getElementById('message').textContent = `🎉 Победил ${winner}! Поздравляем! 🎊`;
-                updateSmallBoardVisual(boardIndex, winner);
-                startConfetti();
-                updateUI();
-                return;
-            }
-            
-            // Если нет победы, проверяем на ничью в малом поле
-            if (gameState.smallBoards[boardIndex].every(cell => cell !== null)) {
-                gameState.bigBoard[boardIndex] = 'draw';
-                updateSmallBoardVisual(boardIndex, 'draw');
-            }
-
-            // Проверка на ничью во всей игре (все поля заполнены)
-            if (gameState.bigBoard.every(cell => cell !== null)) {
-                gameState.gameActive = false;
-                gameState.bigWinner = 'draw';
-                document.getElementById('message').textContent = '🤝 Ничья!';
-                updateUI();
-                return;
-            }
-
-            // Определение следующего поля
-            gameState.nextBoard = cellIndex;
-            if (gameState.bigBoard[cellIndex] !== null) {
-                gameState.nextBoard = null;
-            }
-            gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
-
-            updateUI();
-        }
-
-        function checkSmallBoardWinner(boardIndex) {
-            const board = gameState.smallBoards[boardIndex];
-            const wins = [
-                [0, 1, 2], [3, 4, 5], [6, 7, 8],
-                [0, 3, 6], [1, 4, 7], [2, 5, 8],
-                [0, 4, 8], [2, 4, 6]
-            ];
-
-            for (const [a, b, c] of wins) {
-                if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-                    return board[a];
-                }
-            }
-            return null;
-        }
-
-        function checkBigBoardWinner() {
-            const wins = [
-                [0, 1, 2], [3, 4, 5], [6, 7, 8],
-                [0, 3, 6], [1, 4, 7], [2, 5, 8],
-                [0, 4, 8], [2, 4, 6]
-            ];
-
-            for (const [a, b, c] of wins) {
-                if (gameState.bigBoard[a] && 
-                    gameState.bigBoard[a] !== 'draw' &&
-                    gameState.bigBoard[a] === gameState.bigBoard[b] && 
-                    gameState.bigBoard[a] === gameState.bigBoard[c]) {
-                    return gameState.bigBoard[a];
-                }
-            }
-
-            if (gameState.bigBoard.every(cell => cell !== null)) {
-                return 'draw';
-            }
-
-            return null;
-        }
-
-        function updateSmallBoardVisual(boardIndex, result) {
-            const smallBoard = document.getElementById(`board-${boardIndex}`);
-            smallBoard.className = 'small-board';
-            
-            if (result === 'X') {
-                smallBoard.classList.add('won-x');
-            } else if (result === 'O') {
-                smallBoard.classList.add('won-o');
-            } else if (result === 'draw') {
-                smallBoard.classList.add('draw');
-            }
-        }
-
-        function updateUI() {
-            for (let i = 0; i < 9; i++) {
-                for (let j = 0; j < 9; j++) {
-                    const cell = document.getElementById(`cell-${i}-${j}`);
-                    const value = gameState.smallBoards[i][j];
-                    
-                    cell.textContent = value || '';
-                    cell.className = 'cell';
-                    
-                    if (value) {
-                        cell.classList.add('taken', value.toLowerCase());
-                    } else if (gameState.bigBoard[i] !== null) {
-                        cell.classList.add('disabled');
-                    } else if (gameState.nextBoard !== null && gameState.nextBoard !== i) {
-                        cell.classList.add('disabled');
-                    }
-                }
-
-                const smallBoard = document.getElementById(`board-${i}`);
-                if (gameState.nextBoard === i && gameState.bigBoard[i] === null && gameState.gameActive) {
-                    smallBoard.classList.add('active-board');
-                } else {
-                    smallBoard.classList.remove('active-board');
-                }
-            }
-
-            document.getElementById('currentPlayer').textContent = gameState.currentPlayer;
-            document.getElementById('nextBoard').textContent = 
-                gameState.nextBoard === null ? 'Любое' : gameState.nextBoard + 1;
-        }
-
-        function restartGame() {
-            gameState = {
-                bigBoard: Array(9).fill(null),
-                smallBoards: Array(9).fill(null).map(() => Array(9).fill(null)),
-                currentPlayer: 'X',
-                nextBoard: null,
-                gameActive: true,
-                bigWinner: null
-            };
-            document.getElementById('message').textContent = '';
-            document.getElementById('confettiCanvas').style.display = 'none';
-            
-            // Если мультиплеер - уведомляем сервер
-            if (isMultiplayer && socket && roomId) {
-                socket.emit('restartGame', { roomId: roomId });
-            } else {
-                initGame();
-            }
-        }
-
-        // Инициализация при загрузке - показываем главное меню
-        // initGame вызывается только после выбора режима
-    </script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script src="game-rules.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
