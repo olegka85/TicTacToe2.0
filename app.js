@@ -14,6 +14,7 @@ let multiplayerStatus = 'idle';
 let gameState = GameRules.createInitialState();
 let celebratedWinner = null;
 let confettiFrame = null;
+let renderedBigBoard = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +35,7 @@ function resetSessionState() {
     multiplayerStatus = 'idle';
     gameState = GameRules.createInitialState();
     celebratedWinner = null;
+    renderedBigBoard = null;
     $('message').textContent = '';
     $('gameCodeDisplay').textContent = '';
     $('roomCodeInput').value = '';
@@ -369,7 +371,121 @@ function updateUI() {
         : gameState.nextBoard === null ? 'Любое' : String(gameState.nextBoard + 1);
 
     $('restartBtn').disabled = isMultiplayer && multiplayerStatus === 'waiting';
+    celebrateNewSmallBoardWin();
     updateGameMessage();
+}
+
+function celebrateNewSmallBoardWin() {
+    const currentResults = gameState.bigBoard.slice();
+
+    if (!renderedBigBoard) {
+        renderedBigBoard = currentResults;
+        return;
+    }
+
+    const wonBoardIndex = currentResults.findIndex((result, index) =>
+        (result === 'X' || result === 'O') && renderedBigBoard[index] === null
+    );
+
+    renderedBigBoard = currentResults;
+
+    // The final game victory gets the larger full-screen celebration below.
+    if (wonBoardIndex === -1 || !gameState.gameActive) return;
+
+    celebrateSmallBoard(wonBoardIndex, currentResults[wonBoardIndex]);
+}
+
+function celebrateSmallBoard(boardIndex, winner) {
+    const board = $(`board-${boardIndex}`);
+    if (!board) return;
+
+    board.classList.remove('capture-pop');
+    void board.offsetWidth;
+    board.classList.add('capture-pop');
+
+    window.setTimeout(() => {
+        board.classList.remove('capture-pop');
+    }, 760);
+
+    startBoardConfetti(board, winner);
+}
+
+function startBoardConfetti(board, winner) {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    stopConfetti();
+
+    const canvas = $('confettiCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvas.style.display = 'block';
+
+    const rect = board.getBoundingClientRect();
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+    const palette = winner === 'X'
+        ? ['#ff4d4d', '#ff7a45', '#ffd666', '#fff1f0', '#ffffff']
+        : ['#40a9ff', '#36cfc9', '#69c0ff', '#d6e4ff', '#ffffff'];
+
+    const particles = Array.from({ length: 72 }, (_, index) => {
+        const angle = (Math.PI * 2 * index) / 72 + (Math.random() - 0.5) * 0.34;
+        const speed = Math.random() * 5.5 + 3.2;
+        return {
+            x: originX + (Math.random() - 0.5) * 18,
+            y: originY + (Math.random() - 0.5) * 18,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 2.2,
+            gravity: Math.random() * 0.09 + 0.08,
+            size: Math.random() * 6 + 3,
+            color: palette[Math.floor(Math.random() * palette.length)],
+            rotation: Math.random() * Math.PI,
+            rotationSpeed: Math.random() * 0.24 - 0.12,
+            circle: Math.random() > 0.72
+        };
+    });
+
+    const startedAt = performance.now();
+    const duration = 1200;
+
+    function animate(now) {
+        const progress = Math.min((now - startedAt) / duration, 1);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = Math.max(0, 1 - progress);
+
+        for (const particle of particles) {
+            ctx.save();
+            ctx.translate(particle.x, particle.y);
+            ctx.rotate(particle.rotation);
+            ctx.fillStyle = particle.color;
+
+            if (particle.circle) {
+                ctx.beginPath();
+                ctx.arc(0, 0, particle.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+            }
+
+            ctx.restore();
+
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            particle.vy += particle.gravity;
+            particle.vx *= 0.992;
+            particle.rotation += particle.rotationSpeed;
+        }
+
+        ctx.globalAlpha = 1;
+
+        if (progress < 1) {
+            confettiFrame = requestAnimationFrame(animate);
+        } else {
+            stopConfetti();
+        }
+    }
+
+    confettiFrame = requestAnimationFrame(animate);
 }
 
 function updateGameMessage() {
@@ -406,6 +522,7 @@ function updateGameMessage() {
 
 function restartGame() {
     celebratedWinner = null;
+    renderedBigBoard = null;
     stopConfetti();
     $('message').textContent = '';
 
