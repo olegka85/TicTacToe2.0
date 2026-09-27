@@ -387,21 +387,16 @@ function updateGameMessage() {
     }
 
     if (isMultiplayer) {
-        if (gameState.winner === myPlayerId) {
-            $('message').textContent = '🎉 Вы победили!';
-            if (celebratedWinner !== gameState.winner) {
-                celebratedWinner = gameState.winner;
-                startVictoryConfetti(gameState.winner);
-            }
-        } else {
-            $('message').textContent = `Победил игрок ${gameState.winner}`;
-        }
+        $('message').textContent = gameState.winner === myPlayerId
+            ? '🎉 Вы победили!'
+            : `Победил игрок ${gameState.winner}`;
     } else {
         $('message').textContent = `🎉 Победил ${gameState.winner}!`;
-        if (celebratedWinner !== gameState.winner) {
-            celebratedWinner = gameState.winner;
-            startVictoryConfetti(gameState.winner);
-        }
+    }
+
+    if (celebratedWinner !== gameState.winner) {
+        celebratedWinner = gameState.winner;
+        startVictoryConfetti(gameState.winner);
     }
 }
 
