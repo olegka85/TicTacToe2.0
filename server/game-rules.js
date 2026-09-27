@@ -104,15 +104,28 @@
             nextState.bigBoard[boardIndex] = smallResult;
         }
 
-        const bigResult = getBigBoardResult(nextState.bigBoard);
-        if (bigResult !== null) {
+        // In this game mode, completing any 3-in-a-row inside a small board
+        // immediately wins the whole match.
+        if (smallResult === 'X' || smallResult === 'O') {
             nextState.gameActive = false;
-            nextState.winner = bigResult;
+            nextState.winner = smallResult;
             nextState.nextBoard = null;
             return {
                 ok: true,
                 state: nextState,
-                move: { boardIndex, cellIndex, player, smallResult, bigResult }
+                move: { boardIndex, cellIndex, player, smallResult, bigResult: smallResult }
+            };
+        }
+
+        // A full match with no small-board winner is a draw.
+        if (nextState.bigBoard.every((cell) => cell !== null)) {
+            nextState.gameActive = false;
+            nextState.winner = 'draw';
+            nextState.nextBoard = null;
+            return {
+                ok: true,
+                state: nextState,
+                move: { boardIndex, cellIndex, player, smallResult, bigResult: 'draw' }
             };
         }
 

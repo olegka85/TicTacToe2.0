@@ -37,7 +37,7 @@ test('a move on the wrong routed board is rejected', () => {
     assert.match(result.error, /поле 8/);
 });
 
-test('winning one small board does not end the whole game', () => {
+test('winning one small board immediately ends the whole game', () => {
     const state = GameRules.createInitialState();
     state.currentPlayer = 'X';
     state.smallBoards[2][0] = 'X';
@@ -45,8 +45,9 @@ test('winning one small board does not end the whole game', () => {
     const result = GameRules.applyMove(state, 2, 2, 'X');
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.state.bigBoard[2], 'X');
-    assert.strictEqual(result.state.gameActive, true);
-    assert.strictEqual(result.state.winner, null);
+    assert.strictEqual(result.state.gameActive, false);
+    assert.strictEqual(result.state.winner, 'X');
+    assert.strictEqual(result.state.nextBoard, null);
 });
 
 test('routing to an already finished small board allows any unfinished board', () => {
@@ -58,18 +59,17 @@ test('routing to an already finished small board allows any unfinished board', (
     assert.strictEqual(result.state.nextBoard, null);
 });
 
-test('three won small boards in a line end the game', () => {
+test('an O line in a small board also ends the match immediately', () => {
     const state = GameRules.createInitialState();
-    state.currentPlayer = 'X';
-    state.bigBoard[0] = 'X';
-    state.bigBoard[1] = 'X';
-    state.smallBoards[2][0] = 'X';
-    state.smallBoards[2][1] = 'X';
-    const result = GameRules.applyMove(state, 2, 2, 'X');
+    state.currentPlayer = 'O';
+    state.smallBoards[4][2] = 'O';
+    state.smallBoards[4][5] = 'O';
+    const result = GameRules.applyMove(state, 4, 8, 'O');
     assert.strictEqual(result.ok, true);
-    assert.strictEqual(result.state.bigBoard[2], 'X');
+    assert.strictEqual(result.state.bigBoard[4], 'O');
     assert.strictEqual(result.state.gameActive, false);
-    assert.strictEqual(result.state.winner, 'X');
+    assert.strictEqual(result.state.winner, 'O');
+    assert.strictEqual(result.state.nextBoard, null);
 });
 
 test('resolved small board cannot be played again', () => {
