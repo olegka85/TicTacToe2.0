@@ -346,6 +346,14 @@ function updateUI() {
         if (boardResult === 'O') smallBoard.classList.add('won-o');
         if (boardResult === 'draw') smallBoard.classList.add('draw');
 
+        const hasWinner = !gameState.gameActive && (gameState.winner === 'X' || gameState.winner === 'O');
+        const winningBoard = hasWinner && boardResult === gameState.winner;
+        if (hasWinner) smallBoard.classList.add(winningBoard ? 'winning-board' : 'muted-board');
+        const winningCells = winningBoard
+            ? GameRules.WIN_PATTERNS.filter((line) => line.every((index) =>
+                gameState.smallBoards[boardIndex][index] === gameState.winner)).flat()
+            : [];
+
         const boardAllowed = gameState.nextBoard === null || gameState.nextBoard === boardIndex;
         const boardPlayable = gameState.gameActive && boardResult === null && boardAllowed;
         if (boardPlayable && canInteractOnline) smallBoard.classList.add('active-board');
@@ -355,6 +363,7 @@ function updateUI() {
             const value = gameState.smallBoards[boardIndex][cellIndex];
             cell.textContent = value || '';
             cell.className = 'cell';
+            if (winningCells.includes(cellIndex)) cell.classList.add('winning-cell');
 
             if (value) {
                 cell.classList.add('taken', value.toLowerCase());
@@ -375,6 +384,11 @@ function updateUI() {
 
 function updateGameMessage() {
     if (gameState.gameActive) {
+        // Also runs on the other client's restart and on a new online room.
+        if (celebratedWinner !== null) {
+            celebratedWinner = null;
+            stopConfetti();
+        }
         $('message').textContent = isMultiplayer && multiplayerStatus === 'waiting'
             ? 'Ожидаем второго игрока…'
             : '';
@@ -401,11 +415,6 @@ function updateGameMessage() {
 }
 
 function restartGame() {
-    celebratedWinner = null;
-    renderedBigBoard = null;
-    stopConfetti();
-    $('message').textContent = '';
-
     if (isMultiplayer) {
         if (socket && socket.connected && roomId && multiplayerStatus !== 'waiting') {
             socket.emit('restartGame', { roomId });
@@ -418,12 +427,12 @@ function restartGame() {
 }
 
 function startVictoryConfetti(winner) {
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
     stopConfetti();
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     const canvas = $('confettiCanvas');
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     const particles = [];
     const palette = winner === 'X'
         ? ['#ff3b30', '#ff6b35', '#ffd60a', '#fff1e8', '#ffffff']
@@ -431,6 +440,7 @@ function startVictoryConfetti(winner) {
 
     const SPAWN_DURATION = 5200;
     const startedAt = performance.now();
+    let lastFrameAt = startedAt;
     let lastBottomVolleyAt = -Infinity;
     let lastTopRainAt = -Infinity;
 
@@ -465,10 +475,31 @@ function startVictoryConfetti(winner) {
             maxAge: options.maxAge,
             age: 0,
             rotation: random(0, Math.PI * 2),
-            rotationSpeed: random(-0.22, 0.22),
+            rotationSpeed: random(-10, 10),
             color: color(),
             shape: Math.random() > 0.25 ? 'rect' : 'circle'
         });
+    }
+
+    function launchWinningBoardBurst() {
+        const boardIndex = gameState.bigBoard.indexOf(winner);
+        const board = $(`board-${boardIndex}`);
+        if (!board) return;
+        const rect = board.getBoundingClientRect();
+        for (let i = 0; i < 90; i += 1) {
+            const angle = random(0, Math.PI * 2);
+            const speed = random(150, 360);
+            addParticle({
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 180,
+                gravity: 200,
+                drag: 0.65,
+                size: random(7, 13),
+                maxAge: random(6000, 8000)
+            });
+        }
     }
 
     function launchBottomVolley() {
@@ -478,17 +509,19 @@ function startVictoryConfetti(winner) {
 
         for (let i = 0; i < amount; i += 1) {
             const angle = -Math.PI / 2 + random(-0.5, 0.5);
-            const speed = random(8.5, 14.5);
+            const gravity = random(580, 780);
+            // Reach the game board even on tall phones; units are px/second.
+            const speed = Math.sqrt(2 * gravity * window.innerHeight * random(0.55, 0.85));
 
             addParticle({
                 x: originX + random(-14, 14),
                 y: window.innerHeight + random(5, 20),
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed,
-                gravity: random(0.16, 0.23),
-                drag: random(0.989, 0.995),
-                size: random(4.5, 10.5),
-                maxAge: random(4200, 6800)
+                gravity,
+                drag: random(0.52, 0.74),
+                size: random(7, 13),
+                maxAge: random(6500, 8500)
             });
         }
     }
@@ -500,12 +533,12 @@ function startVictoryConfetti(winner) {
             addParticle({
                 x: random(0, window.innerWidth),
                 y: random(-50, -10),
-                vx: random(-0.8, 0.8),
-                vy: random(1.4, 3.2),
-                gravity: random(0.045, 0.085),
-                drag: 0.997,
-                size: random(3.5, 7.5),
-                maxAge: random(4300, 7200)
+                vx: random(-48, 48),
+                vy: random(84, 192),
+                gravity: random(100, 160),
+                drag: 0.84,
+                size: random(5, 9),
+                maxAge: random(7000, 9000)
             });
         }
     }
@@ -531,34 +564,21 @@ function startVictoryConfetti(winner) {
     function animate(now) {
         const elapsed = now - startedAt;
         const spawning = elapsed < SPAWN_DURATION;
+        const deltaMs = Math.max(0, now - lastFrameAt);
+        const dt = deltaMs / 1000;
+        lastFrameAt = now;
 
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
-        if (spawning && now - lastBottomVolleyAt >= 190) {
-            launchBottomVolley();
-            lastBottomVolleyAt = now;
-        }
-
-        if (spawning && now - lastTopRainAt >= 260) {
-            sprinkleFromTop();
-            lastTopRainAt = now;
-        }
-
         for (let i = particles.length - 1; i >= 0; i -= 1) {
             const particle = particles[i];
-            particle.age += 16.7;
-            particle.x += particle.vx;
-            particle.y += particle.vy;
-            particle.vx *= particle.drag;
-            particle.vy += particle.gravity;
-            particle.rotation += particle.rotationSpeed;
-
-            const fadeFrom = particle.maxAge * 0.78;
-            const alpha = particle.age <= fadeFrom
-                ? 1
-                : Math.max(0, 1 - (particle.age - fadeFrom) / (particle.maxAge - fadeFrom));
-
-            drawParticle(particle, alpha);
+            particle.age += deltaMs;
+            const drag = Math.pow(particle.drag, dt);
+            particle.x += particle.vx * (1 - drag) / -Math.log(particle.drag);
+            particle.y += particle.vy * dt + 0.5 * particle.gravity * dt * dt;
+            particle.vx *= drag;
+            particle.vy += particle.gravity * dt;
+            particle.rotation += particle.rotationSpeed * dt;
 
             if (
                 particle.age >= particle.maxAge ||
@@ -570,6 +590,22 @@ function startVictoryConfetti(winner) {
             }
         }
 
+        if (spawning && now - lastBottomVolleyAt >= 190) {
+            launchBottomVolley();
+            lastBottomVolleyAt = now;
+        }
+        if (spawning && now - lastTopRainAt >= 260) {
+            sprinkleFromTop();
+            lastTopRainAt = now;
+        }
+        for (const particle of particles) {
+            const fadeFrom = particle.maxAge * 0.8;
+            const alpha = particle.age <= fadeFrom
+                ? 1
+                : Math.max(0, 1 - (particle.age - fadeFrom) / (particle.maxAge - fadeFrom));
+            drawParticle(particle, alpha);
+        }
+
         if (spawning || particles.length > 0) {
             confettiFrame = requestAnimationFrame(animate);
         } else {
@@ -577,6 +613,7 @@ function startVictoryConfetti(winner) {
         }
     }
 
+    launchWinningBoardBurst();
     confettiFrame = requestAnimationFrame(animate);
 }
 
@@ -593,7 +630,7 @@ function stopConfetti() {
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     canvas.style.display = 'none';
 }
 $('roomCodeInput').addEventListener('input', (event) => {

@@ -34,3 +34,6 @@ jobs:
       - name: Run game rule tests
         working-directory: server
         run: npm test
+
+      - name: Run client victory and restart regressions
+        run: node --test tests/client.test.js
