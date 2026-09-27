@@ -14,7 +14,7 @@ let multiplayerStatus = 'idle';
 let gameState = GameRules.createInitialState();
 let celebratedWinner = null;
 let confettiFrame = null;
-let renderedBigBoard = null;
+let confettiResizeHandler = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -35,7 +35,6 @@ function resetSessionState() {
     multiplayerStatus = 'idle';
     gameState = GameRules.createInitialState();
     celebratedWinner = null;
-    renderedBigBoard = null;
     $('message').textContent = '';
     $('gameCodeDisplay').textContent = '';
     $('roomCodeInput').value = '';
@@ -371,121 +370,7 @@ function updateUI() {
         : gameState.nextBoard === null ? 'Любое' : String(gameState.nextBoard + 1);
 
     $('restartBtn').disabled = isMultiplayer && multiplayerStatus === 'waiting';
-    celebrateNewSmallBoardWin();
     updateGameMessage();
-}
-
-function celebrateNewSmallBoardWin() {
-    const currentResults = gameState.bigBoard.slice();
-
-    if (!renderedBigBoard) {
-        renderedBigBoard = currentResults;
-        return;
-    }
-
-    const wonBoardIndex = currentResults.findIndex((result, index) =>
-        (result === 'X' || result === 'O') && renderedBigBoard[index] === null
-    );
-
-    renderedBigBoard = currentResults;
-
-    // The final game victory gets the larger full-screen celebration below.
-    if (wonBoardIndex === -1 || !gameState.gameActive) return;
-
-    celebrateSmallBoard(wonBoardIndex, currentResults[wonBoardIndex]);
-}
-
-function celebrateSmallBoard(boardIndex, winner) {
-    const board = $(`board-${boardIndex}`);
-    if (!board) return;
-
-    board.classList.remove('capture-pop');
-    void board.offsetWidth;
-    board.classList.add('capture-pop');
-
-    window.setTimeout(() => {
-        board.classList.remove('capture-pop');
-    }, 760);
-
-    startBoardConfetti(board, winner);
-}
-
-function startBoardConfetti(board, winner) {
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    stopConfetti();
-
-    const canvas = $('confettiCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    canvas.style.display = 'block';
-
-    const rect = board.getBoundingClientRect();
-    const originX = rect.left + rect.width / 2;
-    const originY = rect.top + rect.height / 2;
-    const palette = winner === 'X'
-        ? ['#ff4d4d', '#ff7a45', '#ffd666', '#fff1f0', '#ffffff']
-        : ['#40a9ff', '#36cfc9', '#69c0ff', '#d6e4ff', '#ffffff'];
-
-    const particles = Array.from({ length: 72 }, (_, index) => {
-        const angle = (Math.PI * 2 * index) / 72 + (Math.random() - 0.5) * 0.34;
-        const speed = Math.random() * 5.5 + 3.2;
-        return {
-            x: originX + (Math.random() - 0.5) * 18,
-            y: originY + (Math.random() - 0.5) * 18,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed - 2.2,
-            gravity: Math.random() * 0.09 + 0.08,
-            size: Math.random() * 6 + 3,
-            color: palette[Math.floor(Math.random() * palette.length)],
-            rotation: Math.random() * Math.PI,
-            rotationSpeed: Math.random() * 0.24 - 0.12,
-            circle: Math.random() > 0.72
-        };
-    });
-
-    const startedAt = performance.now();
-    const duration = 1200;
-
-    function animate(now) {
-        const progress = Math.min((now - startedAt) / duration, 1);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.globalAlpha = Math.max(0, 1 - progress);
-
-        for (const particle of particles) {
-            ctx.save();
-            ctx.translate(particle.x, particle.y);
-            ctx.rotate(particle.rotation);
-            ctx.fillStyle = particle.color;
-
-            if (particle.circle) {
-                ctx.beginPath();
-                ctx.arc(0, 0, particle.size / 2, 0, Math.PI * 2);
-                ctx.fill();
-            } else {
-                ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
-            }
-
-            ctx.restore();
-
-            particle.x += particle.vx;
-            particle.y += particle.vy;
-            particle.vy += particle.gravity;
-            particle.vx *= 0.992;
-            particle.rotation += particle.rotationSpeed;
-        }
-
-        ctx.globalAlpha = 1;
-
-        if (progress < 1) {
-            confettiFrame = requestAnimationFrame(animate);
-        } else {
-            stopConfetti();
-        }
-    }
-
-    confettiFrame = requestAnimationFrame(animate);
 }
 
 function updateGameMessage() {
@@ -502,21 +387,16 @@ function updateGameMessage() {
     }
 
     if (isMultiplayer) {
-        if (gameState.winner === myPlayerId) {
-            $('message').textContent = '🎉 Вы победили!';
-            if (celebratedWinner !== gameState.winner) {
-                celebratedWinner = gameState.winner;
-                startConfetti();
-            }
-        } else {
-            $('message').textContent = `Победил игрок ${gameState.winner}`;
-        }
+        $('message').textContent = gameState.winner === myPlayerId
+            ? '🎉 Вы победили!'
+            : `Победил игрок ${gameState.winner}`;
     } else {
         $('message').textContent = `🎉 Победил ${gameState.winner}!`;
-        if (celebratedWinner !== gameState.winner) {
-            celebratedWinner = gameState.winner;
-            startConfetti();
-        }
+    }
+
+    if (celebratedWinner !== gameState.winner) {
+        celebratedWinner = gameState.winner;
+        startVictoryConfetti(gameState.winner);
     }
 }
 
@@ -537,43 +417,160 @@ function restartGame() {
     updateUI();
 }
 
-function startConfetti() {
+function startVictoryConfetti(winner) {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
     stopConfetti();
+
     const canvas = $('confettiCanvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const particles = [];
+    const palette = winner === 'X'
+        ? ['#ff3b30', '#ff6b35', '#ffd60a', '#fff1e8', '#ffffff']
+        : ['#0a84ff', '#30d5c8', '#64d2ff', '#d9efff', '#ffffff'];
+
+    const SPAWN_DURATION = 5200;
+    const startedAt = performance.now();
+    let lastBottomVolleyAt = -Infinity;
+    let lastTopRainAt = -Infinity;
+
+    const resizeCanvas = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(window.innerWidth * dpr);
+        canvas.height = Math.floor(window.innerHeight * dpr);
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    confettiResizeHandler = resizeCanvas;
+    window.addEventListener('resize', confettiResizeHandler);
+    resizeCanvas();
     canvas.style.display = 'block';
 
-    const particles = Array.from({ length: 160 }, () => ({
-        x: Math.random() * canvas.width,
-        y: Math.random() * -canvas.height,
-        size: Math.random() * 8 + 4,
-        speedY: Math.random() * 3 + 2,
-        speedX: Math.random() * 2 - 1,
-        hue: Math.random() * 360,
-        rotation: Math.random() * Math.PI,
-        rotationSpeed: Math.random() * 0.2 - 0.1
-    }));
-    const startedAt = performance.now();
+    const random = (min, max) => Math.random() * (max - min) + min;
+    const color = () => palette[Math.floor(Math.random() * palette.length)];
 
-    function animate(now) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        for (const particle of particles) {
-            ctx.save();
-            ctx.translate(particle.x, particle.y);
-            ctx.rotate(particle.rotation);
-            ctx.fillStyle = `hsl(${particle.hue} 85% 60%)`;
-            ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
-            ctx.restore();
+    function addParticle(options) {
+        if (particles.length >= 760) return;
 
-            particle.y += particle.speedY;
-            particle.x += particle.speedX;
-            particle.rotation += particle.rotationSpeed;
-            if (particle.y > canvas.height + particle.size) particle.y = -particle.size;
+        particles.push({
+            x: options.x,
+            y: options.y,
+            vx: options.vx,
+            vy: options.vy,
+            gravity: options.gravity,
+            drag: options.drag,
+            size: options.size,
+            maxAge: options.maxAge,
+            age: 0,
+            rotation: random(0, Math.PI * 2),
+            rotationSpeed: random(-0.22, 0.22),
+            color: color(),
+            shape: Math.random() > 0.25 ? 'rect' : 'circle'
+        });
+    }
+
+    function launchBottomVolley() {
+        const lanes = [0.12, 0.3, 0.5, 0.7, 0.88];
+        const originX = window.innerWidth * lanes[Math.floor(Math.random() * lanes.length)] + random(-20, 20);
+        const amount = Math.floor(random(36, 52));
+
+        for (let i = 0; i < amount; i += 1) {
+            const angle = -Math.PI / 2 + random(-0.5, 0.5);
+            const speed = random(8.5, 14.5);
+
+            addParticle({
+                x: originX + random(-14, 14),
+                y: window.innerHeight + random(5, 20),
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                gravity: random(0.16, 0.23),
+                drag: random(0.989, 0.995),
+                size: random(4.5, 10.5),
+                maxAge: random(4200, 6800)
+            });
+        }
+    }
+
+    function sprinkleFromTop() {
+        const amount = Math.floor(random(3, 7));
+
+        for (let i = 0; i < amount; i += 1) {
+            addParticle({
+                x: random(0, window.innerWidth),
+                y: random(-50, -10),
+                vx: random(-0.8, 0.8),
+                vy: random(1.4, 3.2),
+                gravity: random(0.045, 0.085),
+                drag: 0.997,
+                size: random(3.5, 7.5),
+                maxAge: random(4300, 7200)
+            });
+        }
+    }
+
+    function drawParticle(particle, alpha) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(particle.x, particle.y);
+        ctx.rotate(particle.rotation);
+        ctx.fillStyle = particle.color;
+
+        if (particle.shape === 'circle') {
+            ctx.beginPath();
+            ctx.arc(0, 0, particle.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size * 0.7);
         }
 
-        if (now - startedAt < 2600) {
+        ctx.restore();
+    }
+
+    function animate(now) {
+        const elapsed = now - startedAt;
+        const spawning = elapsed < SPAWN_DURATION;
+
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+        if (spawning && now - lastBottomVolleyAt >= 190) {
+            launchBottomVolley();
+            lastBottomVolleyAt = now;
+        }
+
+        if (spawning && now - lastTopRainAt >= 260) {
+            sprinkleFromTop();
+            lastTopRainAt = now;
+        }
+
+        for (let i = particles.length - 1; i >= 0; i -= 1) {
+            const particle = particles[i];
+            particle.age += 16.7;
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            particle.vx *= particle.drag;
+            particle.vy += particle.gravity;
+            particle.rotation += particle.rotationSpeed;
+
+            const fadeFrom = particle.maxAge * 0.78;
+            const alpha = particle.age <= fadeFrom
+                ? 1
+                : Math.max(0, 1 - (particle.age - fadeFrom) / (particle.maxAge - fadeFrom));
+
+            drawParticle(particle, alpha);
+
+            if (
+                particle.age >= particle.maxAge ||
+                particle.y > window.innerHeight + 100 ||
+                particle.x < -120 ||
+                particle.x > window.innerWidth + 120
+            ) {
+                particles.splice(i, 1);
+            }
+        }
+
+        if (spawning || particles.length > 0) {
             confettiFrame = requestAnimationFrame(animate);
         } else {
             stopConfetti();
@@ -586,10 +583,19 @@ function startConfetti() {
 function stopConfetti() {
     if (confettiFrame !== null) cancelAnimationFrame(confettiFrame);
     confettiFrame = null;
-    const canvas = $('confettiCanvas');
-    if (canvas) canvas.style.display = 'none';
-}
 
+    if (confettiResizeHandler) {
+        window.removeEventListener('resize', confettiResizeHandler);
+        confettiResizeHandler = null;
+    }
+
+    const canvas = $('confettiCanvas');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.style.display = 'none';
+}
 $('roomCodeInput').addEventListener('input', (event) => {
     event.target.value = event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6);
 });
