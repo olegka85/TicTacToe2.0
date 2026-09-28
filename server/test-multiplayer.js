@@ -64,9 +64,14 @@ function waitForState(socket, predicate, label) {
         }, TIMEOUT_MS);
 
         const onState = (payload) => {
-            if (!predicate(payload)) return;
-            cleanup();
-            resolve(payload);
+            try {
+                if (!predicate(payload)) return;
+                cleanup();
+                resolve(payload);
+            } catch (error) {
+                cleanup();
+                reject(error);
+            }
         };
 
         const onError = (payload) => {
@@ -101,6 +106,7 @@ async function main() {
     try {
         const health = await waitForHealth();
         assert.ok(health.features.includes('session-resume-v1'));
+        assert.ok(health.features.includes('async-turns-v1'));
 
         const creator = await connectClient('creator');
         sockets.push(creator);
@@ -117,67 +123,112 @@ async function main() {
         assert.ok(waiting.sessionToken);
         assert.strictEqual(waiting.state.currentPlayer, 'X');
 
+        // The creator may close Telegram/the browser before the invitee opens the link.
+        creator.close();
+        await delay(50);
+
         const guest = await connectClient('guest');
         sockets.push(guest);
 
-        const creatorStartedPromise = waitForState(
-            creator,
-            (payload) => payload && payload.roomId === waiting.roomId && payload.status === 'playing',
-            'creator playing'
-        );
         const guestStartedPromise = waitForState(
             guest,
             (payload) => payload && payload.roomId === waiting.roomId &&
                 payload.status === 'playing' && payload.playerId === 'X',
-            'guest playing'
+            'guest playing while creator offline'
         );
-
         guest.emit('joinGame', { roomId: waiting.roomId });
-        const [creatorStarted, guestStarted] = await Promise.all([creatorStartedPromise, guestStartedPromise]);
+        const guestStarted = await guestStartedPromise;
 
-        assert.strictEqual(creatorStarted.playerId, 'O');
-        assert.strictEqual(guestStarted.playerId, 'X');
         assert.strictEqual(guestStarted.state.currentPlayer, 'X');
+        assert.strictEqual(guestStarted.players.connected.O, false);
         assert.ok(guestStarted.sessionToken);
 
-        const creatorAfterMove = waitForState(
-            creator,
-            (payload) => payload && payload.state.smallBoards[4][7] === 'X' &&
-                payload.state.currentPlayer === 'O',
-            'first move for creator'
-        );
-        const guestAfterMove = waitForState(
+        // The invitee owns the first move even while the creator is offline.
+        const guestAfterFirstMove = waitForState(
             guest,
             (payload) => payload && payload.state.smallBoards[4][7] === 'X' &&
+                payload.state.currentPlayer === 'O' &&
+                payload.players.connected.O === false,
+            'guest first move while creator offline'
+        );
+        guest.emit('makeMove', { roomId: waiting.roomId, boardIndex: 4, cellIndex: 7 });
+        await guestAfterFirstMove;
+
+        const returningCreator = await connectClient('returning creator');
+        sockets.push(returningCreator);
+
+        const creatorResumedPromise = waitForState(
+            returningCreator,
+            (payload) => payload && payload.roomId === waiting.roomId &&
+                payload.status === 'playing' &&
+                payload.playerId === 'O' &&
+                payload.state.smallBoards[4][7] === 'X' &&
                 payload.state.currentPlayer === 'O',
-            'first move for guest'
+            'creator resumes after guest move'
+        );
+        const guestSeesCreatorPromise = waitForState(
+            guest,
+            (payload) => payload && payload.roomId === waiting.roomId &&
+                payload.players.connected.O === true,
+            'guest sees creator reconnect'
         );
 
-        guest.emit('makeMove', { roomId: waiting.roomId, boardIndex: 4, cellIndex: 7 });
-        await Promise.all([creatorAfterMove, guestAfterMove]);
+        returningCreator.emit('resumeGame', {
+            roomId: waiting.roomId,
+            sessionToken: waiting.sessionToken
+        });
 
-        const pausedPromise = waitForState(
-            creator,
-            (payload) => payload && payload.roomId === waiting.roomId && payload.status === 'paused',
-            'creator paused after guest disconnect'
+        const [creatorResumed] = await Promise.all([
+            creatorResumedPromise,
+            guestSeesCreatorPromise
+        ]);
+        assert.strictEqual(creatorResumed.state.nextBoard, 7);
+
+        const creatorAfterMove = waitForState(
+            returningCreator,
+            (payload) => payload && payload.state.smallBoards[7][0] === 'O' &&
+                payload.state.currentPlayer === 'X' &&
+                payload.state.nextBoard === 0,
+            'creator asynchronous reply'
+        );
+        const guestAfterCreatorMove = waitForState(
+            guest,
+            (payload) => payload && payload.state.smallBoards[7][0] === 'O' &&
+                payload.state.currentPlayer === 'X',
+            'guest sees creator reply'
+        );
+
+        returningCreator.emit('makeMove', {
+            roomId: waiting.roomId,
+            boardIndex: 7,
+            cellIndex: 0
+        });
+        await Promise.all([creatorAfterMove, guestAfterCreatorMove]);
+
+        // The guest closes the app; the game remains playable/saved.
+        const creatorSeesGuestOffline = waitForState(
+            returningCreator,
+            (payload) => payload && payload.roomId === waiting.roomId &&
+                payload.status === 'playing' &&
+                payload.players.connected.X === false &&
+                payload.state.smallBoards[7][0] === 'O',
+            'creator sees guest offline without pausing game'
         );
         guest.close();
-        await pausedPromise;
+        await creatorSeesGuestOffline;
 
         const returningGuest = await connectClient('returning guest');
         sockets.push(returningGuest);
 
-        const creatorResumedPromise = waitForState(
-            creator,
-            (payload) => payload && payload.roomId === waiting.roomId && payload.status === 'playing' &&
-                payload.state.smallBoards[4][7] === 'X',
-            'creator sees resumed guest'
-        );
         const guestResumedPromise = waitForState(
             returningGuest,
-            (payload) => payload && payload.roomId === waiting.roomId && payload.status === 'playing' &&
-                payload.playerId === 'X' && payload.state.smallBoards[4][7] === 'X',
-            'guest resumes saved state'
+            (payload) => payload && payload.roomId === waiting.roomId &&
+                payload.status === 'playing' &&
+                payload.playerId === 'X' &&
+                payload.state.smallBoards[4][7] === 'X' &&
+                payload.state.smallBoards[7][0] === 'O' &&
+                payload.state.currentPlayer === 'X',
+            'guest resumes exact saved board'
         );
 
         returningGuest.emit('resumeGame', {
@@ -185,9 +236,21 @@ async function main() {
             sessionToken: guestStarted.sessionToken
         });
 
-        const [, resumedGuest] = await Promise.all([creatorResumedPromise, guestResumedPromise]);
-        assert.strictEqual(resumedGuest.state.currentPlayer, 'O');
-        assert.strictEqual(resumedGuest.state.nextBoard, 7);
+        const resumedGuest = await guestResumedPromise;
+        assert.strictEqual(resumedGuest.state.nextBoard, 0);
+
+        const creatorAfterResumedMove = waitForState(
+            returningCreator,
+            (payload) => payload && payload.state.smallBoards[0][1] === 'X' &&
+                payload.state.currentPlayer === 'O',
+            'resumed guest move reaches creator'
+        );
+        returningGuest.emit('makeMove', {
+            roomId: waiting.roomId,
+            boardIndex: 0,
+            cellIndex: 1
+        });
+        await creatorAfterResumedMove;
 
         const invalidSessionError = new Promise((resolve, reject) => {
             const attacker = io(SERVER_URL, {
@@ -224,10 +287,10 @@ async function main() {
         });
         await invalidSessionError;
 
-        creator.emit('leaveGame');
+        returningCreator.emit('leaveGame');
         returningGuest.emit('leaveGame');
 
-        console.log('All multiplayer session tests passed.');
+        console.log('All asynchronous multiplayer session tests passed.');
     } finally {
         for (const socket of sockets) {
             try { socket.close(); } catch (_error) {}
