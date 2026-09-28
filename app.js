@@ -214,6 +214,7 @@ async function shareGame() {
 
 function startLocalGame() {
     leaveOnlineRoom();
+    clearSavedSession();
     isMultiplayer = false;
     resetSessionState();
     hideSetupPanels();
@@ -318,7 +319,6 @@ function initSocket() {
         resetSessionState();
         setVisible('gameContainer', false);
         setVisible('createGameContainer', false);
-        setVisible('joinGameContainer', false);
         setVisible('mainMenu', false);
         setVisible('multiplayerMenu', true);
         updateConnectionStatus(`⚠️ ${message}`, '#ffe49a');
