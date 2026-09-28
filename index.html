@@ -265,25 +265,16 @@
     </div>
 
     <div id="multiplayerMenu" class="menu" hidden>
-        <button class="action-btn" type="button" onclick="showCreateGame()">🆕 Создать комнату</button>
-        <button class="action-btn" type="button" onclick="showJoinGame()">🎮 Войти в комнату</button>
+        <button class="action-btn" type="button" onclick="showCreateGame()">🆕 Создать онлайн-игру</button>
         <button class="action-btn secondary" type="button" onclick="backToMainMenu()">↩️ Назад</button>
     </div>
 
     <div id="createGameContainer" class="form-panel" hidden>
-        <div>Ваш код игры</div>
-        <div id="gameCodeDisplay" class="room-code"></div>
-        <div class="helper-text">Отправьте код второму игроку. Игра начнётся автоматически после входа.</div>
-        <button class="action-btn" type="button" onclick="copyGameCode()">📋 Копировать код</button>
+        <div class="helper-text">Игра готова. Отправьте приглашение — тот, кто откроет ссылку, сразу войдёт в эту партию и будет ходить первым.</div>
+        <button class="action-btn" type="button" onclick="shareGame()">📤 Отправить приглашение</button>
+        <button class="action-btn secondary" type="button" onclick="copyGameLink()">🔗 Скопировать ссылку</button>
         <button class="action-btn secondary" type="button" onclick="cancelGame()">❌ Отмена</button>
     </div>
-
-    <div id="joinGameContainer" class="form-panel" hidden>
-        <input id="roomCodeInput" class="room-input" type="text" inputmode="text" autocomplete="off" maxlength="6" placeholder="КОД ИГРЫ">
-        <div>
-            <button class="action-btn" type="button" onclick="joinGame()">🎮 Войти</button>
-            <button class="action-btn secondary" type="button" onclick="cancelJoin()">❌ Отмена</button>
-        </div>
     </div>
 
     <div id="connectionStatus" aria-live="polite"></div>
@@ -311,6 +302,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script src="server/game-rules.js?v=20260927-victory"></script>
-    <script src="app.js?v=20260928-gentle-confetti-v2"></script>
+    <script src="app.js?v=20260928-share-resume"></script>
 </body>
 </html>

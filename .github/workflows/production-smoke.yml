@@ -1,10 +1,6 @@
 name: Production Multiplayer Smoke
 
 on:
-  pull_request:
-    paths:
-      - "smoke/**"
-      - ".github/workflows/production-smoke.yml"
   push:
     branches:
       - master

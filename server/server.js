@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -7,7 +8,11 @@ const GameRules = require('./game-rules');
 const app = express();
 app.use(cors());
 app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'tictactoe-socket' });
+    res.json({
+        ok: true,
+        service: 'tictactoe-socket',
+        features: ['share-link-v1', 'session-resume-v1']
+    });
 });
 
 const server = http.createServer(app);
@@ -20,7 +25,8 @@ const io = new Server(server, {
 
 const games = new Map();
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const WAITING_ROOM_TTL_MS = 30 * 60 * 1000;
+const WAITING_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+const INACTIVE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function createRoomId() {
     let roomId;
@@ -30,31 +36,59 @@ function createRoomId() {
     return roomId;
 }
 
+function createSessionToken() {
+    return crypto.randomBytes(24).toString('base64url');
+}
+
 function normalizeRoomId(value) {
     const raw = typeof value === 'string' ? value : value && value.roomId;
     return typeof raw === 'string' ? raw.trim().toUpperCase() : '';
 }
 
+function normalizeSessionToken(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function createPlayer(socket) {
+    return {
+        sessionToken: createSessionToken(),
+        socketId: socket.id
+    };
+}
+
 function getPlayerId(game, socketId) {
-    if (game.players.X === socketId) return 'X';
-    if (game.players.O === socketId) return 'O';
+    if (game.players.X && game.players.X.socketId === socketId) return 'X';
+    if (game.players.O && game.players.O.socketId === socketId) return 'O';
+    return null;
+}
+
+function getPlayerIdByToken(game, sessionToken) {
+    if (game.players.X && game.players.X.sessionToken === sessionToken) return 'X';
+    if (game.players.O && game.players.O.sessionToken === sessionToken) return 'O';
     return null;
 }
 
 function getStatus(game) {
-    if (!game.players.O) return 'waiting';
+    if (!game.players.X) return 'waiting';
     if (!game.state.gameActive) return 'finished';
+    if (!game.players.X.socketId || !game.players.O || !game.players.O.socketId) return 'paused';
     return 'playing';
 }
 
 function buildStatePayload(game, playerId) {
+    const player = game.players[playerId];
     return {
         roomId: game.id,
         playerId,
+        sessionToken: player ? player.sessionToken : null,
         status: getStatus(game),
         players: {
             X: Boolean(game.players.X),
-            O: Boolean(game.players.O)
+            O: Boolean(game.players.O),
+            connected: {
+                X: Boolean(game.players.X && game.players.X.socketId),
+                O: Boolean(game.players.O && game.players.O.socketId)
+            }
         },
         state: GameRules.cloneState(game.state)
     };
@@ -62,17 +96,17 @@ function buildStatePayload(game, playerId) {
 
 function emitState(game) {
     for (const playerId of ['X', 'O']) {
-        const socketId = game.players[playerId];
-        if (!socketId) continue;
-        const playerSocket = io.sockets.sockets.get(socketId);
+        const player = game.players[playerId];
+        if (!player || !player.socketId) continue;
+        const playerSocket = io.sockets.sockets.get(player.socketId);
         if (playerSocket) {
             playerSocket.emit('gameState', buildStatePayload(game, playerId));
         }
     }
 }
 
-function emitGameError(socket, message) {
-    socket.emit('gameError', { message });
+function emitGameError(socket, message, code = 'GAME_ERROR') {
+    socket.emit('gameError', { message, code });
 }
 
 function clearSocketRoomData(socket) {
@@ -80,108 +114,174 @@ function clearSocketRoomData(socket) {
     socket.data.playerId = null;
 }
 
+function bindPlayerToSocket(game, playerId, socket) {
+    const player = game.players[playerId];
+    if (!player) return false;
+
+    if (player.socketId && player.socketId !== socket.id) {
+        const previousSocket = io.sockets.sockets.get(player.socketId);
+        if (previousSocket) {
+            previousSocket.leave(game.id);
+            clearSocketRoomData(previousSocket);
+            previousSocket.emit('sessionReplaced', {
+                message: 'Эта партия открыта в другом окне или на другом устройстве.'
+            });
+        }
+    }
+
+    player.socketId = socket.id;
+    socket.join(game.id);
+    socket.data.roomId = game.id;
+    socket.data.playerId = playerId;
+    game.updatedAt = Date.now();
+    return true;
+}
+
+function closeGame(game, message) {
+    games.delete(game.id);
+
+    for (const playerId of ['X', 'O']) {
+        const player = game.players[playerId];
+        if (!player || !player.socketId) continue;
+        const playerSocket = io.sockets.sockets.get(player.socketId);
+        if (!playerSocket) continue;
+        playerSocket.leave(game.id);
+        clearSocketRoomData(playerSocket);
+        playerSocket.emit('roomClosed', { message });
+    }
+}
+
 function leaveCurrentGame(socket, options = {}) {
     const roomId = socket.data.roomId;
     if (!roomId) return;
 
     const game = games.get(roomId);
+    const playerId = game ? getPlayerId(game, socket.id) : null;
+
     clearSocketRoomData(socket);
     socket.leave(roomId);
 
-    if (!game) return;
+    if (!game || !playerId) return;
 
-    const playerId = getPlayerId(game, socket.id);
-    if (!playerId) return;
+    const player = game.players[playerId];
+    if (player && player.socketId === socket.id) {
+        player.socketId = null;
+    }
+    game.updatedAt = Date.now();
 
-    if (playerId === 'X') {
-        const opponentSocketId = game.players.O;
+    if (!options.explicit) {
+        emitState(game);
+        return;
+    }
+
+    if (playerId === 'O') {
         games.delete(roomId);
-
-        if (opponentSocketId) {
-            const opponentSocket = io.sockets.sockets.get(opponentSocketId);
+        const opponent = game.players.X;
+        if (opponent && opponent.socketId) {
+            const opponentSocket = io.sockets.sockets.get(opponent.socketId);
             if (opponentSocket) {
                 opponentSocket.leave(roomId);
                 clearSocketRoomData(opponentSocket);
                 opponentSocket.emit('roomClosed', {
-                    message: options.disconnected
-                        ? 'Создатель комнаты отключился. Комната закрыта.'
-                        : 'Создатель комнаты вышел. Комната закрыта.'
+                    message: 'Создатель завершил эту комнату.'
                 });
             }
         }
         return;
     }
 
-    game.players.O = null;
+    game.players.X = null;
     game.state = GameRules.createInitialState();
     game.updatedAt = Date.now();
 
-    const creatorSocket = io.sockets.sockets.get(game.players.X);
-    if (creatorSocket) {
-        creatorSocket.emit('opponentLeft', {
-            message: options.disconnected
-                ? 'Второй игрок отключился. Ожидание нового игрока.'
-                : 'Второй игрок вышел. Ожидание нового игрока.'
-        });
+    const creator = game.players.O;
+    if (creator && creator.socketId) {
+        const creatorSocket = io.sockets.sockets.get(creator.socketId);
+        if (creatorSocket) {
+            creatorSocket.emit('opponentLeft', {
+                message: 'Соперник вышел. Можно отправить приглашение снова.'
+            });
+        }
     }
     emitState(game);
 }
 
 io.on('connection', (socket) => {
-    console.log(`Игрок подключился: ${socket.id}`);
+    console.log('Игрок подключился: ' + socket.id);
 
     socket.on('createGame', () => {
-        leaveCurrentGame(socket);
+        leaveCurrentGame(socket, { explicit: true });
 
         const roomId = createRoomId();
         const game = {
             id: roomId,
-            players: { X: socket.id, O: null },
+            players: { X: null, O: createPlayer(socket) },
             state: GameRules.createInitialState(),
             createdAt: Date.now(),
             updatedAt: Date.now()
         };
 
         games.set(roomId, game);
-        socket.join(roomId);
-        socket.data.roomId = roomId;
-        socket.data.playerId = 'X';
+        bindPlayerToSocket(game, 'O', socket);
         emitState(game);
-        console.log(`Игра создана: ${roomId}`);
+        console.log('Игра создана: ' + roomId);
     });
 
     socket.on('joinGame', (payload) => {
         const roomId = normalizeRoomId(payload);
         if (!/^[A-Z2-9]{6}$/.test(roomId)) {
-            emitGameError(socket, 'Некорректный код комнаты');
+            emitGameError(socket, 'Некорректная ссылка на игру', 'INVALID_ROOM');
             return;
         }
 
         const game = games.get(roomId);
         if (!game) {
-            emitGameError(socket, 'Игра не найдена');
+            emitGameError(socket, 'Игра не найдена или уже завершена', 'ROOM_NOT_FOUND');
             return;
         }
-        if (game.players.X === socket.id) {
-            emitGameError(socket, 'Вы уже создали эту комнату');
-            return;
-        }
-        if (game.players.O && game.players.O !== socket.id) {
-            emitGameError(socket, 'Игра уже заполнена');
+        if (game.players.X) {
+            emitGameError(socket, 'К этой игре уже присоединились', 'ROOM_FULL');
             return;
         }
 
-        leaveCurrentGame(socket);
-        game.players.O = socket.id;
+        leaveCurrentGame(socket, { explicit: true });
+        game.players.X = createPlayer(socket);
         game.state = GameRules.createInitialState();
         game.updatedAt = Date.now();
 
-        socket.join(roomId);
-        socket.data.roomId = roomId;
-        socket.data.playerId = 'O';
-
+        bindPlayerToSocket(game, 'X', socket);
         emitState(game);
-        console.log(`Игрок O присоединился к игре: ${roomId}`);
+        console.log('Игрок X присоединился к игре: ' + roomId);
+    });
+
+    socket.on('resumeGame', (payload = {}) => {
+        const roomId = normalizeRoomId(payload);
+        const sessionToken = normalizeSessionToken(payload.sessionToken);
+
+        if (!/^[A-Z2-9]{6}$/.test(roomId) || !sessionToken) {
+            emitGameError(socket, 'Не удалось восстановить сохранённую партию', 'INVALID_SESSION');
+            return;
+        }
+
+        const game = games.get(roomId);
+        if (!game) {
+            emitGameError(socket, 'Сохранённая партия больше не существует', 'ROOM_NOT_FOUND');
+            return;
+        }
+
+        const playerId = getPlayerIdByToken(game, sessionToken);
+        if (!playerId) {
+            emitGameError(socket, 'Сессия этой партии недействительна', 'INVALID_SESSION');
+            return;
+        }
+
+        if (socket.data.roomId && socket.data.roomId !== roomId) {
+            leaveCurrentGame(socket, { explicit: true });
+        }
+
+        bindPlayerToSocket(game, playerId, socket);
+        emitState(game);
+        console.log('Игрок ' + playerId + ' вернулся в игру: ' + roomId);
     });
 
     socket.on('makeMove', (payload = {}) => {
@@ -189,17 +289,18 @@ io.on('connection', (socket) => {
         const game = games.get(roomId);
 
         if (!game) {
-            emitGameError(socket, 'Игра не найдена');
+            emitGameError(socket, 'Игра не найдена', 'ROOM_NOT_FOUND');
             return;
         }
 
         const playerId = getPlayerId(game, socket.id);
         if (!playerId || socket.data.roomId !== roomId) {
-            emitGameError(socket, 'Вы не участвуете в этой игре');
+            emitGameError(socket, 'Вы не участвуете в этой игре', 'NOT_IN_GAME');
             return;
         }
-        if (!game.players.O) {
-            emitGameError(socket, 'Ожидаем второго игрока');
+        if (getStatus(game) !== 'playing') {
+            emitGameError(socket, 'Соперник не в сети. Партия сохранена.', 'GAME_PAUSED');
+            emitState(game);
             return;
         }
 
@@ -208,7 +309,7 @@ io.on('connection', (socket) => {
         const result = GameRules.applyMove(game.state, boardIndex, cellIndex, playerId);
 
         if (!result.ok) {
-            emitGameError(socket, result.error);
+            emitGameError(socket, result.error, 'INVALID_MOVE');
             emitState(game);
             return;
         }
@@ -223,15 +324,19 @@ io.on('connection', (socket) => {
         const game = games.get(roomId);
 
         if (!game) {
-            emitGameError(socket, 'Игра не найдена');
+            emitGameError(socket, 'Игра не найдена', 'ROOM_NOT_FOUND');
             return;
         }
         if (!getPlayerId(game, socket.id)) {
-            emitGameError(socket, 'Вы не участвуете в этой игре');
+            emitGameError(socket, 'Вы не участвуете в этой игре', 'NOT_IN_GAME');
             return;
         }
-        if (!game.players.O) {
-            emitGameError(socket, 'Нельзя начать игру без второго игрока');
+        if (getStatus(game) === 'waiting') {
+            emitGameError(socket, 'Нельзя начать игру без второго игрока', 'WAITING_FOR_OPPONENT');
+            return;
+        }
+        if (!game.players.X.socketId || !game.players.O.socketId) {
+            emitGameError(socket, 'Соперник не в сети. Партия сохранена.', 'GAME_PAUSED');
             return;
         }
 
@@ -241,26 +346,28 @@ io.on('connection', (socket) => {
     });
 
     socket.on('leaveGame', () => {
-        leaveCurrentGame(socket);
+        leaveCurrentGame(socket, { explicit: true });
     });
 
     socket.on('disconnect', () => {
-        console.log(`Игрок отключился: ${socket.id}`);
-        leaveCurrentGame(socket, { disconnected: true });
+        console.log('Игрок отключился: ' + socket.id);
+        leaveCurrentGame(socket, { explicit: false, disconnected: true });
     });
 });
 
 const cleanupTimer = setInterval(() => {
     const now = Date.now();
-    for (const [roomId, game] of games.entries()) {
-        if (!game.players.O && now - game.updatedAt > WAITING_ROOM_TTL_MS) {
-            const creatorSocket = io.sockets.sockets.get(game.players.X);
-            if (creatorSocket) {
-                creatorSocket.leave(roomId);
-                clearSocketRoomData(creatorSocket);
-                creatorSocket.emit('roomClosed', { message: 'Комната закрыта из-за долгого ожидания.' });
-            }
-            games.delete(roomId);
+
+    for (const game of games.values()) {
+        const status = getStatus(game);
+        const hasConnectedPlayer = ['X', 'O'].some((playerId) => {
+            const player = game.players[playerId];
+            return Boolean(player && player.socketId);
+        });
+        const ttl = status === 'waiting' ? WAITING_ROOM_TTL_MS : INACTIVE_ROOM_TTL_MS;
+
+        if (!hasConnectedPlayer && now - game.updatedAt > ttl) {
+            closeGame(game, 'Сохранённая партия закрыта из-за долгого отсутствия.');
         }
     }
 }, 60 * 1000);
@@ -268,5 +375,5 @@ cleanupTimer.unref();
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Сервер запущен на порту ${PORT}`);
+    console.log('Сервер запущен на порту ' + PORT);
 });
