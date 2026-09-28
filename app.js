@@ -1,14 +1,17 @@
 'use strict';
 
-const SERVER_URL = new URLSearchParams(window.location.search).get('server') ||
+const SEARCH_PARAMS = new URLSearchParams(window.location.search);
+const SERVER_URL = SEARCH_PARAMS.get('server') ||
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
         : 'https://tictactoe-socket-production-7951.up.railway.app');
+const SESSION_STORAGE_KEY = 'tictactoe.onlineSession.v1';
 
 let socket = null;
 let socketConnectPromise = null;
 let roomId = null;
 let myPlayerId = null;
+let sessionToken = null;
 let isMultiplayer = false;
 let multiplayerStatus = 'idle';
 let gameState = GameRules.createInitialState();
@@ -26,19 +29,187 @@ function hideSetupPanels() {
     setVisible('mainMenu', false);
     setVisible('multiplayerMenu', false);
     setVisible('createGameContainer', false);
-    setVisible('joinGameContainer', false);
 }
 
 function resetSessionState() {
     roomId = null;
     myPlayerId = null;
+    sessionToken = null;
     multiplayerStatus = 'idle';
     gameState = GameRules.createInitialState();
     celebratedWinner = null;
     $('message').textContent = '';
-    $('gameCodeDisplay').textContent = '';
-    $('roomCodeInput').value = '';
     stopConfetti();
+}
+
+function normalizeRoomCode(value) {
+    const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+    return /^[A-Z2-9]{6}$/.test(normalized) ? normalized : null;
+}
+
+function getTelegramWebApp() {
+    return window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+}
+
+function getInviteRoomId() {
+    const queryRoom = normalizeRoomCode(SEARCH_PARAMS.get('room'));
+    if (queryRoom) return queryRoom;
+
+    const telegram = getTelegramWebApp();
+    const startParam = telegram && telegram.initDataUnsafe
+        ? telegram.initDataUnsafe.start_param
+        : null;
+    if (!startParam) return null;
+
+    const normalizedStartParam = String(startParam).replace(/^room[_-]?/i, '');
+    return normalizeRoomCode(normalizedStartParam);
+}
+
+function isSavedSession(value) {
+    return Boolean(
+        value &&
+        normalizeRoomCode(value.roomId) &&
+        typeof value.sessionToken === 'string' &&
+        value.sessionToken.length >= 20 &&
+        (value.playerId === 'X' || value.playerId === 'O')
+    );
+}
+
+function readLocalSession() {
+    try {
+        if (typeof localStorage === 'undefined') return null;
+        const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return isSavedSession(parsed) ? parsed : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function writeSavedSession(value) {
+    if (!isSavedSession(value)) return;
+
+    const serialized = JSON.stringify(value);
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+        }
+    } catch (_error) {
+        // Browser storage can be unavailable in privacy modes; Telegram CloudStorage is a fallback.
+    }
+
+    const telegram = getTelegramWebApp();
+    const cloudStorage = telegram && telegram.CloudStorage;
+    if (cloudStorage && typeof cloudStorage.setItem === 'function') {
+        cloudStorage.setItem(SESSION_STORAGE_KEY, serialized, () => {});
+    }
+}
+
+function clearSavedSession() {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+        }
+    } catch (_error) {
+        // Ignore unavailable browser storage.
+    }
+
+    const telegram = getTelegramWebApp();
+    const cloudStorage = telegram && telegram.CloudStorage;
+    if (cloudStorage && typeof cloudStorage.removeItem === 'function') {
+        cloudStorage.removeItem(SESSION_STORAGE_KEY, () => {});
+    }
+}
+
+function readTelegramSession() {
+    const telegram = getTelegramWebApp();
+    const cloudStorage = telegram && telegram.CloudStorage;
+    if (!cloudStorage || typeof cloudStorage.getItem !== 'function') {
+        return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+        cloudStorage.getItem(SESSION_STORAGE_KEY, (error, raw) => {
+            if (error || !raw) {
+                resolve(null);
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(raw);
+                resolve(isSavedSession(parsed) ? parsed : null);
+            } catch (_error) {
+                resolve(null);
+            }
+        });
+    });
+}
+
+async function readSavedSession() {
+    return readLocalSession() || await readTelegramSession();
+}
+
+function persistCurrentSession() {
+    if (!roomId || !sessionToken || !myPlayerId) return;
+    writeSavedSession({ roomId, sessionToken, playerId: myPlayerId });
+}
+
+function buildInviteUrl() {
+    if (!roomId) return '';
+
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('room', roomId);
+        url.hash = '';
+        return url.toString();
+    } catch (_error) {
+        return '?room=' + encodeURIComponent(roomId);
+    }
+}
+
+async function copyGameLink() {
+    const inviteUrl = buildInviteUrl();
+    if (!inviteUrl) return;
+
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+            await navigator.clipboard.writeText(inviteUrl);
+            updateConnectionStatus('Ссылка на игру скопирована', '#b8ffbf');
+            return;
+        }
+    } catch (_error) {
+        // Fall through to showing the URL.
+    }
+
+    updateConnectionStatus('Ссылка: ' + inviteUrl, '#ffffff');
+}
+
+async function shareGame() {
+    const inviteUrl = buildInviteUrl();
+    if (!inviteUrl) return;
+
+    const title = 'Крестики-Нолики 2.0';
+    const text = 'Сыграем? Открой ссылку — первый ход будет твоим.';
+    const telegram = getTelegramWebApp();
+
+    if (telegram && telegram.initData && typeof telegram.openTelegramLink === 'function') {
+        const shareUrl = 'https://t.me/share/url?url=' +
+            encodeURIComponent(inviteUrl) + '&text=' + encodeURIComponent(text);
+        telegram.openTelegramLink(shareUrl);
+        return;
+    }
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        try {
+            await navigator.share({ title, text, url: inviteUrl });
+            return;
+        } catch (error) {
+            if (error && error.name === 'AbortError') return;
+        }
+    }
+
+    await copyGameLink();
 }
 
 function startLocalGame() {
@@ -56,18 +227,17 @@ function showMultiplayerMenu() {
     setVisible('mainMenu', false);
     setVisible('gameContainer', false);
     setVisible('createGameContainer', false);
-    setVisible('joinGameContainer', false);
     setVisible('multiplayerMenu', true);
     updateConnectionStatus('', '#ffffff');
 }
 
 function backToMainMenu() {
     leaveOnlineRoom();
+    clearSavedSession();
     isMultiplayer = false;
     resetSessionState();
     setVisible('multiplayerMenu', false);
     setVisible('createGameContainer', false);
-    setVisible('joinGameContainer', false);
     setVisible('gameContainer', false);
     setVisible('mainMenu', true);
     updateConnectionStatus('', '#ffffff');
@@ -84,6 +254,14 @@ function initSocket() {
 
     socket.on('connect', () => {
         socketConnectPromise = null;
+
+        if (isMultiplayer && roomId && sessionToken && multiplayerStatus === 'disconnected') {
+            multiplayerStatus = 'restoring';
+            updateConnectionStatus('Восстанавливаем партию…', '#ffffff');
+            socket.emit('resumeGame', { roomId, sessionToken });
+            return;
+        }
+
         if (!roomId) updateConnectionStatus('🟢 Подключено к серверу', '#b8ffbf');
     });
 
@@ -105,7 +283,27 @@ function initSocket() {
 
     socket.on('gameError', (payload) => {
         const message = payload && payload.message ? payload.message : 'Ошибка игры';
-        updateConnectionStatus(`⚠️ ${message}`, '#ffe49a');
+        const code = payload && payload.code ? payload.code : 'GAME_ERROR';
+        const enteringGame = multiplayerStatus === 'joining' || multiplayerStatus === 'restoring';
+
+        if (enteringGame && ['ROOM_NOT_FOUND', 'INVALID_SESSION', 'ROOM_FULL', 'INVALID_ROOM'].includes(code)) {
+            clearSavedSession();
+            isMultiplayer = false;
+            resetSessionState();
+            setVisible('gameContainer', false);
+            setVisible('createGameContainer', false);
+            setVisible('mainMenu', false);
+            setVisible('multiplayerMenu', true);
+        }
+
+        updateConnectionStatus('⚠️ ' + message, '#ffe49a');
+    });
+
+    socket.on('sessionReplaced', (payload) => {
+        multiplayerStatus = 'replaced';
+        const message = payload && payload.message ? payload.message : 'Партия открыта в другом окне.';
+        updateConnectionStatus('⚠️ ' + message, '#ffe49a');
+        updateUI();
     });
 
     socket.on('opponentLeft', (payload) => {
@@ -115,6 +313,7 @@ function initSocket() {
 
     socket.on('roomClosed', (payload) => {
         const message = payload && payload.message ? payload.message : 'Комната закрыта.';
+        clearSavedSession();
         isMultiplayer = false;
         resetSessionState();
         setVisible('gameContainer', false);
@@ -162,35 +361,82 @@ async function showCreateGame() {
 
     try {
         const activeSocket = await ensureSocketConnected();
+        clearSavedSession();
         isMultiplayer = true;
+        multiplayerStatus = 'creating';
         activeSocket.emit('createGame');
-        updateConnectionStatus('Создаём комнату…', '#ffffff');
+        updateConnectionStatus('Создаём игру…', '#ffffff');
     } catch (error) {
         setVisible('multiplayerMenu', true);
-        updateConnectionStatus(`🔴 Сервер недоступен: ${error.message}`, '#ffb0b0');
+        updateConnectionStatus('🔴 Сервер недоступен: ' + error.message, '#ffb0b0');
     }
 }
 
-function showJoinGame() {
-    setVisible('multiplayerMenu', false);
-    setVisible('joinGameContainer', true);
-    $('roomCodeInput').focus();
+async function joinGameByLink(code) {
+    const normalizedRoomId = normalizeRoomCode(code);
+    if (!normalizedRoomId) return;
+
+    hideSetupPanels();
+    setVisible('gameContainer', false);
+    isMultiplayer = true;
+    roomId = normalizedRoomId;
+    myPlayerId = null;
+    sessionToken = null;
+    multiplayerStatus = 'joining';
+    updateConnectionStatus('Открываем приглашение…', '#ffffff');
+
+    try {
+        const activeSocket = await ensureSocketConnected();
+        activeSocket.emit('joinGame', { roomId: normalizedRoomId });
+    } catch (error) {
+        isMultiplayer = false;
+        resetSessionState();
+        setVisible('multiplayerMenu', true);
+        updateConnectionStatus('🔴 Сервер недоступен: ' + error.message, '#ffb0b0');
+    }
 }
 
-async function joinGame() {
-    const code = $('roomCodeInput').value.trim().toUpperCase();
-    if (!/^[A-Z2-9]{6}$/.test(code)) {
-        updateConnectionStatus('Введите шестизначный код комнаты', '#ffe49a');
+async function resumeSavedGame(savedSession) {
+    if (!isSavedSession(savedSession)) return;
+
+    hideSetupPanels();
+    isMultiplayer = true;
+    roomId = savedSession.roomId;
+    myPlayerId = savedSession.playerId;
+    sessionToken = savedSession.sessionToken;
+    multiplayerStatus = 'restoring';
+    setVisible('gameContainer', true);
+    ensureBoardRendered();
+    updateUI();
+    updateConnectionStatus('Восстанавливаем сохранённую партию…', '#ffffff');
+
+    try {
+        const activeSocket = await ensureSocketConnected();
+        activeSocket.emit('resumeGame', { roomId, sessionToken });
+    } catch (error) {
+        multiplayerStatus = 'disconnected';
+        updateConnectionStatus('🔴 Сервер недоступен: ' + error.message, '#ffb0b0');
+        updateUI();
+    }
+}
+
+async function restoreOrJoinOnlineGame() {
+    const inviteRoomId = getInviteRoomId();
+    const savedSession = await readSavedSession();
+
+    if (inviteRoomId && savedSession && savedSession.roomId === inviteRoomId) {
+        await resumeSavedGame(savedSession);
         return;
     }
 
-    updateConnectionStatus('Подключаемся к серверу…', '#ffffff');
-    try {
-        const activeSocket = await ensureSocketConnected();
-        isMultiplayer = true;
-        activeSocket.emit('joinGame', { roomId: code });
-    } catch (error) {
-        updateConnectionStatus(`🔴 Сервер недоступен: ${error.message}`, '#ffb0b0');
+    if (inviteRoomId) {
+        clearSavedSession();
+        await joinGameByLink(inviteRoomId);
+        return;
+    }
+
+    if (savedSession) {
+        await resumeSavedGame(savedSession);
     }
 }
 
@@ -199,17 +445,18 @@ function handleGameState(payload) {
 
     roomId = payload.roomId;
     myPlayerId = payload.playerId;
+    sessionToken = payload.sessionToken || sessionToken;
     multiplayerStatus = payload.status;
     gameState = payload.state;
     isMultiplayer = true;
+    persistCurrentSession();
 
     hideSetupPanels();
     setVisible('gameContainer', true);
     ensureBoardRendered();
 
     if (multiplayerStatus === 'waiting') {
-        setVisible('createGameContainer', myPlayerId === 'X');
-        if (myPlayerId === 'X') $('gameCodeDisplay').textContent = roomId;
+        setVisible('createGameContainer', myPlayerId === 'O');
     }
 
     updateUI();
@@ -220,7 +467,9 @@ function updateMultiplayerStatus() {
     if (!isMultiplayer) return;
 
     if (multiplayerStatus === 'waiting') {
-        updateConnectionStatus(`🟡 Ожидание второго игрока. Код: ${roomId}`, '#ffe49a');
+        updateConnectionStatus('🟡 Игра создана. Отправьте приглашение второму игроку.', '#ffe49a');
+    } else if (multiplayerStatus === 'paused') {
+        updateConnectionStatus('🟡 Соперник не в сети. Партия сохранена.', '#ffe49a');
     } else if (multiplayerStatus === 'finished') {
         updateConnectionStatus('Игра завершена', '#ffffff');
     } else if (multiplayerStatus === 'playing') {
@@ -238,6 +487,7 @@ function updateConnectionStatus(text, color) {
 
 function cancelGame() {
     leaveOnlineRoom();
+    clearSavedSession();
     isMultiplayer = false;
     resetSessionState();
     setVisible('createGameContainer', false);
@@ -246,15 +496,11 @@ function cancelGame() {
     updateConnectionStatus('', '#ffffff');
 }
 
-function cancelJoin() {
-    setVisible('joinGameContainer', false);
-    setVisible('multiplayerMenu', true);
-    updateConnectionStatus('', '#ffffff');
-}
 
 function exitGame() {
     if (isMultiplayer) {
         leaveOnlineRoom();
+        clearSavedSession();
         isMultiplayer = false;
         resetSessionState();
         setVisible('gameContainer', false);
@@ -272,16 +518,6 @@ function leaveOnlineRoom() {
     }
 }
 
-async function copyGameCode() {
-    const code = $('gameCodeDisplay').textContent;
-    if (!code) return;
-    try {
-        await navigator.clipboard.writeText(code);
-        updateConnectionStatus('Код скопирован', '#b8ffbf');
-    } catch (_error) {
-        updateConnectionStatus(`Код комнаты: ${code}`, '#ffffff');
-    }
-}
 
 function ensureBoardRendered() {
     const bigBoard = $('bigBoard');
@@ -378,7 +614,7 @@ function updateUI() {
         ? '—'
         : gameState.nextBoard === null ? 'Любое' : String(gameState.nextBoard + 1);
 
-    $('restartBtn').disabled = isMultiplayer && multiplayerStatus === 'waiting';
+    $('restartBtn').disabled = isMultiplayer && multiplayerStatus !== 'playing' && multiplayerStatus !== 'finished';
     updateGameMessage();
 }
 
@@ -634,15 +870,10 @@ function stopConfetti() {
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     canvas.style.display = 'none';
 }
-$('roomCodeInput').addEventListener('input', (event) => {
-    event.target.value = event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6);
-});
-
-$('roomCodeInput').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') joinGame();
-});
-
-if (window.Telegram && window.Telegram.WebApp) {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
+const telegramWebApp = getTelegramWebApp();
+if (telegramWebApp) {
+    telegramWebApp.ready();
+    telegramWebApp.expand();
 }
+
+restoreOrJoinOnlineGame();
