@@ -510,7 +510,7 @@ function startVictoryConfetti(winner) {
 
         for (let i = 0; i < amount; i += 1) {
             const angle = -Math.PI / 2 + random(-0.5, 0.5);
-            const gravity = random(210, 280);
+            const gravity = random(110, 150);
             // A slower, softer arc that still reaches the board on tall phones.
             const speed = Math.sqrt(2 * gravity * window.innerHeight * random(0.45, 0.65));
 
