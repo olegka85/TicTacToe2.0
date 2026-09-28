@@ -11,7 +11,7 @@ app.get('/health', (_req, res) => {
     res.json({
         ok: true,
         service: 'tictactoe-socket',
-        features: ['share-link-v1', 'session-resume-v1']
+        features: ['share-link-v1', 'session-resume-v1', 'async-turns-v1']
     });
 });
 
@@ -71,7 +71,6 @@ function getPlayerIdByToken(game, sessionToken) {
 function getStatus(game) {
     if (!game.players.X) return 'waiting';
     if (!game.state.gameActive) return 'finished';
-    if (!game.players.X.socketId || !game.players.O || !game.players.O.socketId) return 'paused';
     return 'playing';
 }
 
@@ -298,12 +297,6 @@ io.on('connection', (socket) => {
             emitGameError(socket, 'Вы не участвуете в этой игре', 'NOT_IN_GAME');
             return;
         }
-        if (getStatus(game) !== 'playing') {
-            emitGameError(socket, 'Соперник не в сети. Партия сохранена.', 'GAME_PAUSED');
-            emitState(game);
-            return;
-        }
-
         const boardIndex = Number(payload.boardIndex);
         const cellIndex = Number(payload.cellIndex);
         const result = GameRules.applyMove(game.state, boardIndex, cellIndex, playerId);
@@ -335,11 +328,6 @@ io.on('connection', (socket) => {
             emitGameError(socket, 'Нельзя начать игру без второго игрока', 'WAITING_FOR_OPPONENT');
             return;
         }
-        if (!game.players.X.socketId || !game.players.O.socketId) {
-            emitGameError(socket, 'Соперник не в сети. Партия сохранена.', 'GAME_PAUSED');
-            return;
-        }
-
         game.state = GameRules.createInitialState();
         game.updatedAt = Date.now();
         emitState(game);
