@@ -14,6 +14,7 @@ let myPlayerId = null;
 let sessionToken = null;
 let isMultiplayer = false;
 let multiplayerStatus = 'idle';
+let opponentConnected = false;
 let gameState = GameRules.createInitialState();
 let celebratedWinner = null;
 let confettiFrame = null;
@@ -36,6 +37,7 @@ function resetSessionState() {
     myPlayerId = null;
     sessionToken = null;
     multiplayerStatus = 'idle';
+    opponentConnected = false;
     gameState = GameRules.createInitialState();
     celebratedWinner = null;
     $('message').textContent = '';
@@ -447,6 +449,11 @@ function handleGameState(payload) {
     myPlayerId = payload.playerId;
     sessionToken = payload.sessionToken || sessionToken;
     multiplayerStatus = payload.status;
+    opponentConnected = Boolean(
+        payload.players &&
+        payload.players.connected &&
+        payload.players.connected[myPlayerId === 'X' ? 'O' : 'X']
+    );
     gameState = payload.state;
     isMultiplayer = true;
     persistCurrentSession();
@@ -468,14 +475,14 @@ function updateMultiplayerStatus() {
 
     if (multiplayerStatus === 'waiting') {
         updateConnectionStatus('🟡 Игра создана. Отправьте приглашение второму игроку.', '#ffe49a');
-    } else if (multiplayerStatus === 'paused') {
-        updateConnectionStatus('🟡 Соперник не в сети. Партия сохранена.', '#ffe49a');
     } else if (multiplayerStatus === 'finished') {
         updateConnectionStatus('Игра завершена', '#ffffff');
     } else if (multiplayerStatus === 'playing') {
+        const myTurn = gameState.currentPlayer === myPlayerId;
+        const presence = opponentConnected ? '' : ' · соперник офлайн';
         updateConnectionStatus(
-            gameState.currentPlayer === myPlayerId ? '🟢 Ваш ход' : '🟡 Ход соперника',
-            gameState.currentPlayer === myPlayerId ? '#b8ffbf' : '#ffe49a'
+            (myTurn ? '🟢 Ваш ход' : '🟡 Ход соперника') + presence,
+            myTurn ? '#b8ffbf' : '#ffe49a'
         );
     }
 }
