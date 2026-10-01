@@ -299,9 +299,14 @@
 
     <canvas id="confettiCanvas" aria-hidden="true"></canvas>
 
+    <script>
+        // Username of the Telegram bot that owns the Main Mini App, without @.
+        // Example: ultimate_tictactoe_bot
+        window.TICTACTOE_TELEGRAM_BOT_USERNAME = '';
+    </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script src="server/game-rules.js?v=20260927-victory"></script>
-    <script src="app.js?v=20261001-confetti-dense"></script>
+    <script src="app.js?v=20261001-telegram-invite"></script>
 </body>
 </html>
