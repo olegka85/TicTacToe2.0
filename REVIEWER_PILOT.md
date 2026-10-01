@@ -5,3 +5,5 @@ This temporary file exists only to trigger an end-to-end Peerivo Reviewer pull-r
 Second trigger after Reviewer production rollout.
 
 Rich report UI verification trigger.
+
+Conversation card permission verification trigger.
