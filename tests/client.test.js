@@ -160,10 +160,17 @@ test('confetti trajectory and lifetime use elapsed time at 30/60/120 Hz', () => 
     assert.ok(Math.max(...endTimes) - Math.min(...endTimes) < 0.4);
 });
 
-test('reduced motion retains the winning highlight without animated confetti', () => {
+test('reduced motion keeps a gentler confetti celebration and winning highlight', () => {
     const c = client({ reducedMotion: true }); c.boot(); winLocally(c);
-    assert.equal(c.frames.size, 0);
+    assert.equal(c.frames.size, 1);
     assert.equal(count(c, 'winning-board'), 1);
+
+    let frame = 0;
+    for (; c.frames.size && frame < 60 * 15; frame++) {
+        c.tick((frame + 1) * 1000 / 60);
+    }
+    assert.equal(c.frames.size, 0);
+    assert.equal(c.resizeListeners.size, 0);
 });
 
 test('returning to menu cancels all celebration work', () => {
