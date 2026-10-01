@@ -7,3 +7,5 @@ Second trigger after Reviewer production rollout.
 Rich report UI verification trigger.
 
 Conversation card permission verification trigger.
+
+Permission diagnostics trigger.
