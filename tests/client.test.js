@@ -8,7 +8,7 @@ const GameRules = require('../server/game-rules');
 const appSource = fs.readFileSync(process.env.APP_SOURCE || path.join(__dirname, '../app.js'), 'utf8');
 
 // Exercise the actual client with a small DOM/socket/animation-clock adapter.
-function client({ reducedMotion = false } = {}) {
+function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot' } = {}) {
     const elements = new Map();
     const frames = new Map();
     const resizeListeners = new Set();
@@ -51,6 +51,7 @@ function client({ reducedMotion = false } = {}) {
         Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
         document: { getElementById: id => elements.get(id), createElement: element },
         window: {
+            TICTACTOE_TELEGRAM_BOT_USERNAME: botUsername,
             location: { search: '', hostname: 'localhost' },
             innerWidth: 390, innerHeight: 844, devicePixelRatio: 2,
             matchMedia: () => ({ matches: reducedMotion }),
@@ -181,4 +182,20 @@ test('returning to menu cancels all celebration work', () => {
     assert.equal(c.frames.size, 0);
     assert.equal(c.resizeListeners.size, 0);
     assert.equal(c.elements.get('gameContainer').hidden, true);
+});
+
+
+test('online invite uses Telegram Main Mini App deep link instead of the GitHub page', () => {
+    const c = client(); c.boot();
+    c.run("roomId = 'ABCDEF'");
+    assert.equal(
+        c.run('buildInviteUrl()'),
+        'https://t.me/tictactoe_test_bot?startapp=room_ABCDEF'
+    );
+});
+
+test('invite never falls back to a web page when Telegram bot username is missing', () => {
+    const c = client({ botUsername: '' }); c.boot();
+    c.run("roomId = 'ABCDEF'");
+    assert.equal(c.run('buildInviteUrl()'), '');
 });
