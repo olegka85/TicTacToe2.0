@@ -11,3 +11,5 @@ Conversation card permission verification trigger.
 Permission diagnostics trigger.
 
 Conversation card PR-write verification trigger.
+
+Compact card + dedicated CI check verification trigger.
