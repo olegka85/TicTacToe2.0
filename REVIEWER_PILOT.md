@@ -3,3 +3,5 @@
 This temporary file exists only to trigger an end-to-end Peerivo Reviewer pull-request check.
 
 Second trigger after Reviewer production rollout.
+
+Rich report UI verification trigger.
