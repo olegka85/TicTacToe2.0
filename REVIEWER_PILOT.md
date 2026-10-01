@@ -9,3 +9,5 @@ Rich report UI verification trigger.
 Conversation card permission verification trigger.
 
 Permission diagnostics trigger.
+
+Conversation card PR-write verification trigger.
