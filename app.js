@@ -6,6 +6,7 @@ const SERVER_URL = SEARCH_PARAMS.get('server') ||
         ? 'http://localhost:3000'
         : 'https://tictactoe-socket-production-7951.up.railway.app');
 const SESSION_STORAGE_KEY = 'tictactoe.onlineSession.v1';
+const TELEGRAM_BOT_USERNAME = String(window.TICTACTOE_TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim();
 
 let socket = null;
 let socketConnectPromise = null;
@@ -158,21 +159,17 @@ function persistCurrentSession() {
 }
 
 function buildInviteUrl() {
-    if (!roomId) return '';
-
-    try {
-        const url = new URL(window.location.href);
-        url.searchParams.set('room', roomId);
-        url.hash = '';
-        return url.toString();
-    } catch (_error) {
-        return '?room=' + encodeURIComponent(roomId);
-    }
+    if (!roomId || !TELEGRAM_BOT_USERNAME) return '';
+    const startParam = 'room_' + roomId;
+    return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
 }
 
 async function copyGameLink() {
     const inviteUrl = buildInviteUrl();
-    if (!inviteUrl) return;
+    if (!inviteUrl) {
+        updateConnectionStatus('⚠️ Telegram-ссылка для приглашения не настроена', '#ffe49a');
+        return;
+    }
 
     try {
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -189,7 +186,10 @@ async function copyGameLink() {
 
 async function shareGame() {
     const inviteUrl = buildInviteUrl();
-    if (!inviteUrl) return;
+    if (!inviteUrl) {
+        updateConnectionStatus('⚠️ Telegram-ссылка для приглашения не настроена', '#ffe49a');
+        return;
+    }
 
     const title = 'Крестики-Нолики 2.0';
     const text = 'Сыграем? Открой ссылку — первый ход будет твоим.';
