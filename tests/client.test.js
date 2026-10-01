@@ -104,7 +104,7 @@ for (const [winner, moves] of [['X', xMoves], ['O', oMoves]]) {
         c.run('makeMove(8, 8)');
         assert.equal(c.run('JSON.stringify(gameState)'), state);
         c.tick(100);
-        assert.ok(c.points.length > 90);
+        assert.ok(c.points.length > 180);
         c.run('restartGame()');
         assert.equal(c.run('gameState.gameActive'), true);
         assert.equal(count(c, 'taken'), 0);
@@ -132,7 +132,7 @@ test('online remote restart re-arms the same winner for both players without rep
         c.send(payload); c.tick(200);
         assert.equal(c.frames.size, 1);
         assert.equal(c.resizeListeners.size, 1);
-        assert.ok(c.points.length > 90);
+        assert.ok(c.points.length > 180);
         c.run('restartGame()');
         assert.deepEqual(JSON.parse(JSON.stringify(c.emitted.at(-1))), { name: 'restartGame', payload: { roomId: 'ABCDEF' } });
     }
@@ -160,12 +160,14 @@ test('confetti trajectory and lifetime use elapsed time at 30/60/120 Hz', () => 
     assert.ok(Math.max(...endTimes) - Math.min(...endTimes) < 0.4);
 });
 
-test('reduced motion keeps a gentler confetti celebration and winning highlight', () => {
+test('reduced motion still keeps dense top and bottom confetti while shortening the show', () => {
     const c = client({ reducedMotion: true }); c.boot(); winLocally(c);
     assert.equal(c.frames.size, 1);
     assert.equal(count(c, 'winning-board'), 1);
+    c.tick(100);
+    assert.ok(c.points.length > 150);
 
-    let frame = 0;
+    let frame = 6;
     for (; c.frames.size && frame < 60 * 15; frame++) {
         c.tick((frame + 1) * 1000 / 60);
     }

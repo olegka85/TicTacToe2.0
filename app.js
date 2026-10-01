@@ -688,7 +688,7 @@ function startVictoryConfetti(winner) {
     ];
 
     // Reduced motion should make the celebration gentler, not remove it entirely.
-    const SPAWN_DURATION = prefersReducedMotion ? 1800 : 5200;
+    const SPAWN_DURATION = prefersReducedMotion ? 4200 : 5600;
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
     let lastBottomVolleyAt = -Infinity;
@@ -714,7 +714,7 @@ function startVictoryConfetti(winner) {
     const color = () => palette[Math.floor(Math.random() * palette.length)];
 
     function addParticle(options) {
-        if (particles.length >= 760) return;
+        if (particles.length >= 1400) return;
 
         particles.push({
             x: options.x,
@@ -738,7 +738,7 @@ function startVictoryConfetti(winner) {
         const board = $(`board-${boardIndex}`);
         if (!board) return;
         const rect = board.getBoundingClientRect();
-        const burstAmount = prefersReducedMotion ? 36 : 90;
+        const burstAmount = prefersReducedMotion ? 90 : 120;
         for (let i = 0; i < burstAmount; i += 1) {
             const angle = random(0, Math.PI * 2);
             const speed = random(150, 360);
@@ -758,9 +758,7 @@ function startVictoryConfetti(winner) {
     function launchBottomVolley() {
         const lanes = [0.12, 0.3, 0.5, 0.7, 0.88];
         const originX = window.innerWidth * lanes[Math.floor(Math.random() * lanes.length)] + random(-20, 20);
-        const amount = prefersReducedMotion
-            ? Math.floor(random(12, 18))
-            : Math.floor(random(36, 52));
+        const amount = Math.floor(random(72, 96));
 
         for (let i = 0; i < amount; i += 1) {
             const angle = -Math.PI / 2 + random(-0.5, 0.5);
@@ -782,9 +780,7 @@ function startVictoryConfetti(winner) {
     }
 
     function sprinkleFromTop() {
-        const amount = prefersReducedMotion
-            ? Math.floor(random(1, 3))
-            : Math.floor(random(3, 7));
+        const amount = Math.floor(random(10, 16));
 
         for (let i = 0; i < amount; i += 1) {
             addParticle({
@@ -847,12 +843,12 @@ function startVictoryConfetti(winner) {
             }
         }
 
-        const bottomVolleyInterval = prefersReducedMotion ? 620 : 320;
+        const bottomVolleyInterval = 260;
         if (spawning && now - lastBottomVolleyAt >= bottomVolleyInterval) {
             launchBottomVolley();
             lastBottomVolleyAt = now;
         }
-        const topRainInterval = prefersReducedMotion ? 520 : 260;
+        const topRainInterval = 180;
         if (spawning && now - lastTopRainAt >= topRainInterval) {
             sprinkleFromTop();
             lastTopRainAt = now;
