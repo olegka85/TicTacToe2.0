@@ -671,9 +671,14 @@ function restartGame() {
 
 function startVictoryConfetti(winner) {
     stopConfetti();
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const prefersReducedMotion = Boolean(
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
 
     const canvas = $('confettiCanvas');
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const particles = [];
@@ -682,7 +687,8 @@ function startVictoryConfetti(winner) {
         winner === 'X' ? '#ff9f0a' : '#64d2ff', '#ffffff'
     ];
 
-    const SPAWN_DURATION = 5200;
+    // Reduced motion should make the celebration gentler, not remove it entirely.
+    const SPAWN_DURATION = prefersReducedMotion ? 1800 : 5200;
     const startedAt = performance.now();
     let lastFrameAt = startedAt;
     let lastBottomVolleyAt = -Infinity;
@@ -701,6 +707,8 @@ function startVictoryConfetti(winner) {
     window.addEventListener('resize', confettiResizeHandler);
     resizeCanvas();
     canvas.style.display = 'block';
+    canvas.style.visibility = 'visible';
+    canvas.style.opacity = '1';
 
     const random = (min, max) => Math.random() * (max - min) + min;
     const color = () => palette[Math.floor(Math.random() * palette.length)];
@@ -730,7 +738,8 @@ function startVictoryConfetti(winner) {
         const board = $(`board-${boardIndex}`);
         if (!board) return;
         const rect = board.getBoundingClientRect();
-        for (let i = 0; i < 90; i += 1) {
+        const burstAmount = prefersReducedMotion ? 36 : 90;
+        for (let i = 0; i < burstAmount; i += 1) {
             const angle = random(0, Math.PI * 2);
             const speed = random(150, 360);
             addParticle({
@@ -749,7 +758,9 @@ function startVictoryConfetti(winner) {
     function launchBottomVolley() {
         const lanes = [0.12, 0.3, 0.5, 0.7, 0.88];
         const originX = window.innerWidth * lanes[Math.floor(Math.random() * lanes.length)] + random(-20, 20);
-        const amount = Math.floor(random(36, 52));
+        const amount = prefersReducedMotion
+            ? Math.floor(random(12, 18))
+            : Math.floor(random(36, 52));
 
         for (let i = 0; i < amount; i += 1) {
             const angle = -Math.PI / 2 + random(-0.5, 0.5);
@@ -771,7 +782,9 @@ function startVictoryConfetti(winner) {
     }
 
     function sprinkleFromTop() {
-        const amount = Math.floor(random(3, 7));
+        const amount = prefersReducedMotion
+            ? Math.floor(random(1, 3))
+            : Math.floor(random(3, 7));
 
         for (let i = 0; i < amount; i += 1) {
             addParticle({
@@ -834,11 +847,13 @@ function startVictoryConfetti(winner) {
             }
         }
 
-        if (spawning && now - lastBottomVolleyAt >= 320) {
+        const bottomVolleyInterval = prefersReducedMotion ? 620 : 320;
+        if (spawning && now - lastBottomVolleyAt >= bottomVolleyInterval) {
             launchBottomVolley();
             lastBottomVolleyAt = now;
         }
-        if (spawning && now - lastTopRainAt >= 260) {
+        const topRainInterval = prefersReducedMotion ? 520 : 260;
+        if (spawning && now - lastTopRainAt >= topRainInterval) {
             sprinkleFromTop();
             lastTopRainAt = now;
         }
