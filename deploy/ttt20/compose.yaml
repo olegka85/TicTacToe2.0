@@ -7,11 +7,16 @@ services:
     container_name: peerivo-ttt20-socket
     restart: unless-stopped
     init: true
+    environment:
+      ROOM_DB_PATH: /data/rooms.sqlite
+      NEXT_ROUND_DELAY_MS: "7000"
     read_only: true
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    volumes:
+      - ttt20_room_data:/data
     ports:
       - "127.0.0.1:3530:3000"
     healthcheck:
@@ -20,3 +25,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+volumes:
+  ttt20_room_data:
