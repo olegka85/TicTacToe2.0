@@ -1,0 +1,22 @@
+services:
+  socket:
+    build:
+      context: ../..
+      dockerfile: deploy/ttt20/Dockerfile
+    image: peerivo/ttt20-socket:local
+    container_name: peerivo-ttt20-socket
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:3530:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
