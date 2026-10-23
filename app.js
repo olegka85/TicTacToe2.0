@@ -890,10 +890,19 @@ function stopConfetti() {
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     canvas.style.display = 'none';
 }
-const telegramWebApp = getTelegramWebApp();
-if (telegramWebApp) {
+function initializeTelegramWebApp(loadedLate = false) {
+    const telegramWebApp = getTelegramWebApp();
+    if (!telegramWebApp) return;
     telegramWebApp.ready();
     telegramWebApp.expand();
+
+    // The remote Telegram SDK may finish after the standalone game has loaded.
+    // Recover Telegram deep links / CloudStorage without switching away from an active game.
+    if (loadedLate && !isMultiplayer && !roomId && $('gameContainer').hidden && !readLocalSession()) {
+        void restoreOrJoinOnlineGame();
+    }
 }
 
+window.addEventListener('ttt-telegram-sdk-loaded', () => initializeTelegramWebApp(true));
+initializeTelegramWebApp();
 restoreOrJoinOnlineGame();
