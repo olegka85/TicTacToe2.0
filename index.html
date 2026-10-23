@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Крестики-Нолики 2.0</title>
     <meta name="theme-color" content="#667eea">
-    <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png?v=20261023">
-    <link rel="apple-touch-icon" sizes="192x192" href="/assets/icon-192.png?v=20261023">
+    <link rel="icon" type="image/png" sizes="64x64" href="/assets/icon-64.png?v=20261023">
+    <link rel="apple-touch-icon" sizes="128x128" href="/assets/icon-128.png?v=20261023">
     <link rel="manifest" href="/manifest.webmanifest">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -279,7 +279,6 @@
         <button class="action-btn secondary" type="button" onclick="copyGameLink()">🔗 Скопировать ссылку</button>
         <button class="action-btn secondary" type="button" onclick="cancelGame()">❌ Отмена</button>
     </div>
-    </div>
 
     <div id="connectionStatus" aria-live="polite"></div>
 
@@ -309,7 +308,7 @@
         window.TICTACTOE_TELEGRAM_BOT_USERNAME = 'tictactoe20_bot';
     </script>
     <script async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('ttt-telegram-sdk-loaded'))"></script>
-    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="server/game-rules.js?v=20260927-victory"></script>
     <script src="app.js?v=20261001-telegram-invite"></script>
 </body>
