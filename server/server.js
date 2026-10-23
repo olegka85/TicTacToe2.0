@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const GameRules = require('./game-rules');
+const { createRoomStore } = require('./room-store');
 
 const app = express();
 app.use(cors());
@@ -11,7 +12,7 @@ app.get('/health', (_req, res) => {
     res.json({
         ok: true,
         service: 'tictactoe-socket',
-        features: ['share-link-v1', 'session-resume-v1', 'async-turns-v1']
+        features: ['share-link-v1', 'session-resume-v1', 'async-turns-v1', 'persistent-rooms-v1', 'alternating-rounds-v1']
     });
 });
 
@@ -23,7 +24,27 @@ const io = new Server(server, {
     }
 });
 
-const games = new Map();
+const roomStore = createRoomStore();
+const games = new Map(roomStore.load().map((game) => [game.id, game]));
+const roundTimers = new Map();
+const NEXT_ROUND_DELAY_MS = Number(process.env.NEXT_ROUND_DELAY_MS) >= 500
+    ? Number(process.env.NEXT_ROUND_DELAY_MS) : 7000;
+
+function persist(game) {
+    roomStore.save(game);
+}
+
+function cancelRoundTimer(roomId) {
+    const timer = roundTimers.get(roomId);
+    if (timer) clearTimeout(timer);
+    roundTimers.delete(roomId);
+}
+
+function deleteRoom(game) {
+    cancelRoundTimer(game.id);
+    games.delete(game.id);
+    roomStore.delete(game.id);
+}
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const WAITING_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 const INACTIVE_ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -81,6 +102,10 @@ function buildStatePayload(game, playerId) {
         playerId,
         sessionToken: player ? player.sessionToken : null,
         status: getStatus(game),
+        roundNumber: game.roundNumber,
+        starter: game.starter,
+        score: { ...game.score },
+        nextRoundAt: game.nextRoundAt,
         players: {
             X: Boolean(game.players.X),
             O: Boolean(game.players.O),
@@ -133,11 +158,12 @@ function bindPlayerToSocket(game, playerId, socket) {
     socket.data.roomId = game.id;
     socket.data.playerId = playerId;
     game.updatedAt = Date.now();
+    persist(game);
     return true;
 }
 
 function closeGame(game, message) {
-    games.delete(game.id);
+    deleteRoom(game);
 
     for (const playerId of ['X', 'O']) {
         const player = game.players[playerId];
@@ -169,12 +195,13 @@ function leaveCurrentGame(socket, options = {}) {
     game.updatedAt = Date.now();
 
     if (!options.explicit) {
+        persist(game);
         emitState(game);
         return;
     }
 
     if (playerId === 'O') {
-        games.delete(roomId);
+        deleteRoom(game);
         const opponent = game.players.X;
         if (opponent && opponent.socketId) {
             const opponentSocket = io.sockets.sockets.get(opponent.socketId);
@@ -189,9 +216,15 @@ function leaveCurrentGame(socket, options = {}) {
         return;
     }
 
+    cancelRoundTimer(roomId);
     game.players.X = null;
+    game.starter = 'X';
+    game.roundNumber = 1;
+    game.score = { X: 0, O: 0, draws: 0 };
+    game.nextRoundAt = null;
     game.state = GameRules.createInitialState();
     game.updatedAt = Date.now();
+    persist(game);
 
     const creator = game.players.O;
     if (creator && creator.socketId) {
@@ -205,6 +238,25 @@ function leaveCurrentGame(socket, options = {}) {
     emitState(game);
 }
 
+function startNextRound(game) {
+    if (!games.has(game.id) || game.state.gameActive || !game.players.X) return;
+    cancelRoundTimer(game.id);
+    game.starter = game.starter === 'X' ? 'O' : 'X';
+    game.roundNumber += 1;
+    game.state = GameRules.createInitialState(game.starter);
+    game.nextRoundAt = null;
+    game.updatedAt = Date.now();
+    persist(game);
+    emitState(game);
+}
+
+function scheduleNextRound(game) {
+    cancelRoundTimer(game.id);
+    if (!game.nextRoundAt || game.state.gameActive || !game.players.X) return;
+    const delay = Math.max(0, game.nextRoundAt - Date.now());
+    roundTimers.set(game.id, setTimeout(() => startNextRound(game), delay));
+}
+
 io.on('connection', (socket) => {
     console.log('Игрок подключился: ' + socket.id);
 
@@ -216,6 +268,10 @@ io.on('connection', (socket) => {
             id: roomId,
             players: { X: null, O: createPlayer(socket) },
             state: GameRules.createInitialState(),
+            starter: 'X',
+            roundNumber: 1,
+            score: { X: 0, O: 0, draws: 0 },
+            nextRoundAt: null,
             createdAt: Date.now(),
             updatedAt: Date.now()
         };
@@ -245,6 +301,10 @@ io.on('connection', (socket) => {
 
         leaveCurrentGame(socket, { explicit: true });
         game.players.X = createPlayer(socket);
+        game.starter = 'X';
+        game.roundNumber = 1;
+        game.score = { X: 0, O: 0, draws: 0 };
+        game.nextRoundAt = null;
         game.state = GameRules.createInitialState();
         game.updatedAt = Date.now();
 
@@ -309,7 +369,14 @@ io.on('connection', (socket) => {
 
         game.state = result.state;
         game.updatedAt = Date.now();
+        if (!game.state.gameActive) {
+            if (game.state.winner === 'draw') game.score.draws += 1;
+            else game.score[game.state.winner] += 1;
+            game.nextRoundAt = Date.now() + NEXT_ROUND_DELAY_MS;
+        }
+        persist(game);
         emitState(game);
+        if (!game.state.gameActive) scheduleNextRound(game);
     });
 
     socket.on('restartGame', (payload = {}) => {
@@ -328,9 +395,11 @@ io.on('connection', (socket) => {
             emitGameError(socket, 'Нельзя начать игру без второго игрока', 'WAITING_FOR_OPPONENT');
             return;
         }
-        game.state = GameRules.createInitialState();
-        game.updatedAt = Date.now();
-        emitState(game);
+        if (game.state.gameActive) {
+            emitGameError(socket, 'Раунд ещё не завершён', 'ROUND_IN_PROGRESS');
+            return;
+        }
+        startNextRound(game);
     });
 
     socket.on('leaveGame', () => {
@@ -342,6 +411,11 @@ io.on('connection', (socket) => {
         leaveCurrentGame(socket, { explicit: false, disconnected: true });
     });
 });
+
+// Re-arm finished-round transitions after a server restart.
+for (const game of games.values()) {
+    if (game.nextRoundAt && !game.state.gameActive) scheduleNextRound(game);
+}
 
 const cleanupTimer = setInterval(() => {
     const now = Date.now();
