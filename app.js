@@ -2,9 +2,11 @@
 
 const SEARCH_PARAMS = new URLSearchParams(window.location.search);
 const SERVER_URL = SEARCH_PARAMS.get('server') ||
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:3000'
-        : 'https://tictactoe-socket-production-7951.up.railway.app');
+    (window.location.hostname === 'ttt20.peerivo.net'
+        ? window.location.origin
+        : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000'
+            : 'https://tictactoe-socket-production-7951.up.railway.app'));
 const SESSION_STORAGE_KEY = 'tictactoe.onlineSession.v1';
 const TELEGRAM_BOT_USERNAME = String(window.TICTACTOE_TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim();
 
