@@ -1,0 +1,24 @@
+{
+  "name": "Крестики-нолики 2.0",
+  "short_name": "Крестики 2.0",
+  "description": "Сыграйте в крестики-нолики 2.0 на одном устройстве или по ссылке с другом.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#667eea",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "/assets/icon-64.png",
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

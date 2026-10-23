@@ -2,9 +2,11 @@
 
 const SEARCH_PARAMS = new URLSearchParams(window.location.search);
 const SERVER_URL = SEARCH_PARAMS.get('server') ||
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:3000'
-        : 'https://tictactoe-socket-production-7951.up.railway.app');
+    (window.location.hostname === 'ttt20.peerivo.net'
+        ? window.location.origin
+        : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000'
+            : 'https://tictactoe-socket-production-7951.up.railway.app'));
 const SESSION_STORAGE_KEY = 'tictactoe.onlineSession.v1';
 const TELEGRAM_BOT_USERNAME = String(window.TICTACTOE_TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim();
 
@@ -103,7 +105,7 @@ function writeSavedSession(value) {
     }
 
     const telegram = getTelegramWebApp();
-    const cloudStorage = telegram && telegram.CloudStorage;
+    const cloudStorage = telegram && telegram.initData && telegram.CloudStorage;
     if (cloudStorage && typeof cloudStorage.setItem === 'function') {
         cloudStorage.setItem(SESSION_STORAGE_KEY, serialized, () => {});
     }
@@ -119,7 +121,7 @@ function clearSavedSession() {
     }
 
     const telegram = getTelegramWebApp();
-    const cloudStorage = telegram && telegram.CloudStorage;
+    const cloudStorage = telegram && telegram.initData && telegram.CloudStorage;
     if (cloudStorage && typeof cloudStorage.removeItem === 'function') {
         cloudStorage.removeItem(SESSION_STORAGE_KEY, () => {});
     }
@@ -127,7 +129,7 @@ function clearSavedSession() {
 
 function readTelegramSession() {
     const telegram = getTelegramWebApp();
-    const cloudStorage = telegram && telegram.CloudStorage;
+    const cloudStorage = telegram && telegram.initData && telegram.CloudStorage;
     if (!cloudStorage || typeof cloudStorage.getItem !== 'function') {
         return Promise.resolve(null);
     }
@@ -159,9 +161,18 @@ function persistCurrentSession() {
 }
 
 function buildInviteUrl() {
-    if (!roomId || !TELEGRAM_BOT_USERNAME) return '';
-    const startParam = 'room_' + roomId;
-    return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
+    if (!roomId) return '';
+
+    const telegram = getTelegramWebApp();
+    if (telegram && telegram.initData && TELEGRAM_BOT_USERNAME) {
+        const startParam = 'room_' + roomId;
+        return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
+    }
+
+    // Browser-to-browser invitations stay on this site; Telegram invitations open the Mini App.
+    const url = new URL(window.location.pathname || '/', window.location.origin);
+    url.searchParams.set('room', roomId);
+    return url.toString();
 }
 
 async function copyGameLink() {
@@ -888,10 +899,19 @@ function stopConfetti() {
     if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     canvas.style.display = 'none';
 }
-const telegramWebApp = getTelegramWebApp();
-if (telegramWebApp) {
+function initializeTelegramWebApp(loadedLate = false) {
+    const telegramWebApp = getTelegramWebApp();
+    if (!telegramWebApp) return;
     telegramWebApp.ready();
     telegramWebApp.expand();
+
+    // The remote Telegram SDK may finish after the standalone game has loaded.
+    // Recover Telegram deep links / CloudStorage without switching away from an active game.
+    if (loadedLate && !isMultiplayer && !roomId && $('gameContainer').hidden && !readLocalSession()) {
+        void restoreOrJoinOnlineGame();
+    }
 }
 
+window.addEventListener('ttt-telegram-sdk-loaded', () => initializeTelegramWebApp(true));
+initializeTelegramWebApp();
 restoreOrJoinOnlineGame();
