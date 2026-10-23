@@ -1,0 +1,4 @@
+# REG.RU 1 TicTacToe rooms daily SQLite snapshot at 03:20 UTC (07:20 Georgia).
+SHELL=/bin/bash
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+20 3 * * * root /bin/bash /opt/peerivo/ttt20/deploy/ttt20/backup.sh >> /var/log/ttt20-backup.log 2>&1
