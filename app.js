@@ -18,6 +18,10 @@ let sessionToken = null;
 let isMultiplayer = false;
 let multiplayerStatus = 'idle';
 let opponentConnected = false;
+let roundNumber = 1;
+let firstPlayer = 'X';
+let roundScore = { X: 0, O: 0, draws: 0 };
+let nextRoundAt = null;
 let gameState = GameRules.createInitialState();
 let celebratedWinner = null;
 let confettiFrame = null;
@@ -41,6 +45,10 @@ function resetSessionState() {
     sessionToken = null;
     multiplayerStatus = 'idle';
     opponentConnected = false;
+    roundNumber = 1;
+    firstPlayer = 'X';
+    roundScore = { X: 0, O: 0, draws: 0 };
+    nextRoundAt = null;
     gameState = GameRules.createInitialState();
     celebratedWinner = null;
     $('message').textContent = '';
@@ -466,6 +474,10 @@ function handleGameState(payload) {
         payload.players.connected[myPlayerId === 'X' ? 'O' : 'X']
     );
     gameState = payload.state;
+    roundNumber = payload.roundNumber || 1;
+    firstPlayer = payload.starter === 'O' ? 'O' : 'X';
+    roundScore = payload.score || { X: 0, O: 0, draws: 0 };
+    nextRoundAt = payload.nextRoundAt || null;
     isMultiplayer = true;
     persistCurrentSession();
 
@@ -487,7 +499,10 @@ function updateMultiplayerStatus() {
     if (multiplayerStatus === 'waiting') {
         updateConnectionStatus('🟡 Игра создана. Отправьте приглашение второму игроку.', '#ffe49a');
     } else if (multiplayerStatus === 'finished') {
-        updateConnectionStatus('Игра завершена', '#ffffff');
+        const nextStarter = firstPlayer === 'X' ? 'O' : 'X';
+        const seconds = nextRoundAt ? Math.max(0, Math.ceil((nextRoundAt - Date.now()) / 1000)) : null;
+        const nextText = seconds === null ? '' : ` · Следующий раунд через ${seconds} с, первым ${nextStarter === myPlayerId ? 'вы' : 'соперник'}`;
+        updateConnectionStatus('🏁 Раунд завершён' + nextText, '#ffffff');
     } else if (multiplayerStatus === 'playing') {
         const myTurn = gameState.currentPlayer === myPlayerId;
         const presence = opponentConnected ? '' : ' · соперник офлайн';
@@ -632,7 +647,16 @@ function updateUI() {
         ? '—'
         : gameState.nextBoard === null ? 'Любое' : String(gameState.nextBoard + 1);
 
-    $('restartBtn').disabled = isMultiplayer && multiplayerStatus !== 'playing' && multiplayerStatus !== 'finished';
+    $('restartBtn').hidden = isMultiplayer;
+    $('restartBtn').disabled = isMultiplayer;
+    const info = $('roundInfo');
+    info.hidden = !isMultiplayer;
+    if (isMultiplayer) {
+        const myWins = myPlayerId === 'X' ? roundScore.X : roundScore.O;
+        const theirWins = myPlayerId === 'X' ? roundScore.O : roundScore.X;
+        const starterLabel = firstPlayer === myPlayerId ? 'вы' : 'соперник';
+        info.textContent = `Раунд ${roundNumber} · Первый ход: ${starterLabel} (${firstPlayer}) · Счёт: ${myWins} : ${theirWins} · Ничьи: ${roundScore.draws}`;
+    }
     updateGameMessage();
 }
 
@@ -915,3 +939,7 @@ function initializeTelegramWebApp(loadedLate = false) {
 window.addEventListener('ttt-telegram-sdk-loaded', () => initializeTelegramWebApp(true));
 initializeTelegramWebApp();
 restoreOrJoinOnlineGame();
+// Count down to the next automatic round without rebuilding the game board.
+setInterval(() => {
+    if (isMultiplayer && multiplayerStatus === 'finished' && nextRoundAt) updateMultiplayerStatus();
+}, 500);

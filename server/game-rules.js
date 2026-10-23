@@ -14,11 +14,12 @@
         [0, 4, 8], [2, 4, 6]
     ];
 
-    function createInitialState() {
+    function createInitialState(firstPlayer = 'X') {
+        if (firstPlayer !== 'X' && firstPlayer !== 'O') throw new Error('Invalid first player');
         return {
             bigBoard: Array(9).fill(null),
             smallBoards: Array.from({ length: 9 }, () => Array(9).fill(null)),
-            currentPlayer: 'X',
+            currentPlayer: firstPlayer,
             nextBoard: null,
             gameActive: true,
             winner: null
