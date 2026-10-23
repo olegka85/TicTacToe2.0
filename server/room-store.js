@@ -17,6 +17,7 @@ function createRoomStore(filePath = process.env.ROOM_DB_PATH) {
     }
 
     // Loaded only for the REG.RU 1 deployment (Node 24+).
+    process.umask(0o077); // Session tokens at rest must remain private.
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(filePath);
     db.exec(`
