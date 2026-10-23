@@ -105,7 +105,7 @@ function writeSavedSession(value) {
     }
 
     const telegram = getTelegramWebApp();
-    const cloudStorage = telegram && telegram.CloudStorage;
+    const cloudStorage = telegram && telegram.initData && telegram.CloudStorage;
     if (cloudStorage && typeof cloudStorage.setItem === 'function') {
         cloudStorage.setItem(SESSION_STORAGE_KEY, serialized, () => {});
     }
@@ -121,7 +121,7 @@ function clearSavedSession() {
     }
 
     const telegram = getTelegramWebApp();
-    const cloudStorage = telegram && telegram.CloudStorage;
+    const cloudStorage = telegram && telegram.initData && telegram.CloudStorage;
     if (cloudStorage && typeof cloudStorage.removeItem === 'function') {
         cloudStorage.removeItem(SESSION_STORAGE_KEY, () => {});
     }
@@ -129,7 +129,7 @@ function clearSavedSession() {
 
 function readTelegramSession() {
     const telegram = getTelegramWebApp();
-    const cloudStorage = telegram && telegram.CloudStorage;
+    const cloudStorage = telegram && telegram.initData && telegram.CloudStorage;
     if (!cloudStorage || typeof cloudStorage.getItem !== 'function') {
         return Promise.resolve(null);
     }
@@ -161,9 +161,18 @@ function persistCurrentSession() {
 }
 
 function buildInviteUrl() {
-    if (!roomId || !TELEGRAM_BOT_USERNAME) return '';
-    const startParam = 'room_' + roomId;
-    return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
+    if (!roomId) return '';
+
+    const telegram = getTelegramWebApp();
+    if (telegram && telegram.initData && TELEGRAM_BOT_USERNAME) {
+        const startParam = 'room_' + roomId;
+        return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
+    }
+
+    // Browser-to-browser invitations stay on this site; Telegram invitations open the Mini App.
+    const url = new URL(window.location.pathname || '/', window.location.origin);
+    url.searchParams.set('room', roomId);
+    return url.toString();
 }
 
 async function copyGameLink() {
