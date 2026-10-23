@@ -232,6 +232,17 @@
             font-weight: 800;
         }
 
+        .round-info {
+            max-width: 560px;
+            padding: 8px 12px;
+            margin: 0 auto 10px;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.20);
+            text-align: center;
+            font-size: clamp(12px, 3vw, 15px);
+            line-height: 1.45;
+        }
+
         .game-actions {
             display: flex;
             flex-wrap: wrap;
@@ -283,6 +294,7 @@
     <div id="connectionStatus" aria-live="polite"></div>
 
     <div id="gameContainer" hidden>
+        <div id="roundInfo" class="round-info" aria-live="polite" hidden></div>
         <div class="game-info">
             <div class="player-turn">Ход: <strong id="currentPlayer">X</strong></div>
             <div class="player-turn">Следующее поле: <strong id="nextBoard">Любое</strong></div>
@@ -309,7 +321,7 @@
     </script>
     <script async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('ttt-telegram-sdk-loaded'))"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="server/game-rules.js?v=20260927-victory"></script>
-    <script src="app.js?v=20261001-telegram-invite"></script>
+    <script src="server/game-rules.js?v=20261024-alternate-starters"></script>
+    <script src="app.js?v=20261024-persistent-rounds"></script>
 </body>
 </html>
