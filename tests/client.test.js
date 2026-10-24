@@ -47,19 +47,23 @@ function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot' } = 
         emit(name, payload) { emitted.push({ name, payload }); }
     };
     const context = vm.createContext({
-        GameRules, console, URLSearchParams,
+        GameRules, console, URL, URLSearchParams,
         Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
         document: { getElementById: id => elements.get(id), createElement: element },
         window: {
             TICTACTOE_TELEGRAM_BOT_USERNAME: botUsername,
-            location: { search: '', hostname: 'localhost' },
+            location: { search: '', hostname: 'localhost', pathname: '/', origin: 'http://localhost' },
             innerWidth: 390, innerHeight: 844, devicePixelRatio: 2,
             matchMedia: () => ({ matches: reducedMotion }),
-            addEventListener: (name, fn) => resizeListeners.add(fn),
-            removeEventListener: (name, fn) => resizeListeners.delete(fn)
+            addEventListener: (name, fn) => { if (name === 'resize') resizeListeners.add(fn); },
+            removeEventListener: (name, fn) => { if (name === 'resize') resizeListeners.delete(fn); }
         },
         io: () => socket,
         performance: { now: () => now },
+        // The production client uses an interval for the online next-round countdown.
+        // Client tests advance animation frames manually; no wall-clock timer is needed.
+        setInterval() { return 1; },
+        clearInterval() {},
         requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
         cancelAnimationFrame(id) { frames.delete(id); }
     });
@@ -185,17 +189,22 @@ test('returning to menu cancels all celebration work', () => {
 });
 
 
-test('online invite uses Telegram Main Mini App deep link instead of the GitHub page', () => {
-    const c = client(); c.boot();
+test('Telegram Mini App invite uses Telegram deep link', () => {
+    const c = client();
+    c.run("window.Telegram = { WebApp: { initData: 'fixture', ready() {}, expand() {} } }");
+    c.boot();
     c.run("roomId = 'ABCDEF'");
-    assert.equal(
-        c.run('buildInviteUrl()'),
-        'https://t.me/tictactoe_test_bot?startapp=room_ABCDEF'
-    );
+    assert.equal(c.run('buildInviteUrl()'), 'https://t.me/tictactoe_test_bot?startapp=room_ABCDEF');
 });
 
-test('invite never falls back to a web page when Telegram bot username is missing', () => {
+test('web browser invite stays on the current website', () => {
+    const c = client(); c.boot();
+    c.run("roomId = 'ABCDEF'");
+    assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=ABCDEF');
+});
+
+test('invite without a bot username still works on the website', () => {
     const c = client({ botUsername: '' }); c.boot();
     c.run("roomId = 'ABCDEF'");
-    assert.equal(c.run('buildInviteUrl()'), '');
+    assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=ABCDEF');
 });
