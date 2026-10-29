@@ -29,10 +29,12 @@ assert.equal(moveWord(12), 'ходов');
 const win = formatRoundMessage({ won: true, draw: false, opponentName: 'Марина', winnerMoves: 7, roomId: 'A2B3C4' });
 assert.match(win.text, /победили за 7 ходов/);
 assert.match(win.url, /room=A2B3C4/);
+assert.doesNotMatch(win.text, /https?:\/\/|ttt20\.peerivo\.net|🌐/);
 const lose = formatRoundMessage({ won: false, draw: false, opponentName: 'Марина', roomId: 'A2B3C4' });
-assert.doesNotMatch(lose.text, /проиграли|победил|проигрыш/);
+assert.doesNotMatch(lose.text, /проиграли|победил|проигрыш|https?:\/\/|ttt20\.peerivo\.net|🌐/);
 const draw = formatRoundMessage({ won: false, draw: true, opponentName: 'Марина', roomId: 'A2B3C4' });
 assert.match(draw.text, /Ничья/);
+assert.doesNotMatch(draw.text, /https?:\/\/|ttt20\.peerivo\.net|🌐/);
 (async () => {
     let payload;
     assert.equal(await sendBotMessage(1100220033, win, token, async (_url, options) => {
@@ -40,7 +42,7 @@ assert.match(draw.text, /Ничья/);
         return { ok: true };
     }), true);
     assert.equal(payload.chat_id, 1100220033);
-    assert.equal(payload.reply_markup.inline_keyboard[0][0].text, '🎮 Играть ещё');
+    assert.equal(payload.reply_markup.inline_keyboard[0][0].text, '🎮 Играть');
     assert.equal(payload.reply_markup.inline_keyboard[0][0].web_app.url, win.url);
     assert.equal(await sendBotMessage(0, win, token, async () => { throw Error('must not send'); }), false);
     console.log('Telegram round notification tests passed');
