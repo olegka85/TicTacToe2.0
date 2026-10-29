@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const GameRules = require('./game-rules');
 const { createRoomStore } = require('./room-store');
+const { validateTelegramUser, notifyCompletedRound } = require('./telegram-notifications');
 
 const app = express();
 app.use(cors());
@@ -70,11 +71,20 @@ function normalizeSessionToken(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
-function createPlayer(socket) {
+function createPlayer(socket, payload = {}) {
     return {
         sessionToken: createSessionToken(),
-        socketId: socket.id
+        socketId: socket.id,
+        telegram: validateTelegramUser(payload.initData)
     };
+}
+
+function updateVerifiedTelegram(game, playerId, payload = {}) {
+    const telegram = validateTelegramUser(payload.initData);
+    const player = game.players[playerId];
+    if (telegram && player && (!player.telegram || player.telegram.id === telegram.id)) {
+        player.telegram = telegram;
+    }
 }
 
 function getPlayerId(game, socketId) {
@@ -260,13 +270,13 @@ function scheduleNextRound(game) {
 io.on('connection', (socket) => {
     console.log('Игрок подключился: ' + socket.id);
 
-    socket.on('createGame', () => {
+    socket.on('createGame', (payload = {}) => {
         leaveCurrentGame(socket, { explicit: true });
 
         const roomId = createRoomId();
         const game = {
             id: roomId,
-            players: { X: null, O: createPlayer(socket) },
+            players: { X: null, O: createPlayer(socket, payload) },
             state: GameRules.createInitialState(),
             starter: 'X',
             roundNumber: 1,
@@ -300,7 +310,7 @@ io.on('connection', (socket) => {
         }
 
         leaveCurrentGame(socket, { explicit: true });
-        game.players.X = createPlayer(socket);
+        game.players.X = createPlayer(socket, payload);
         game.starter = 'X';
         game.roundNumber = 1;
         game.score = { X: 0, O: 0, draws: 0 };
@@ -338,6 +348,7 @@ io.on('connection', (socket) => {
             leaveCurrentGame(socket, { explicit: true });
         }
 
+        updateVerifiedTelegram(game, playerId, payload);
         bindPlayerToSocket(game, playerId, socket);
         emitState(game);
         console.log('Игрок ' + playerId + ' вернулся в игру: ' + roomId);
@@ -376,7 +387,10 @@ io.on('connection', (socket) => {
         }
         persist(game);
         emitState(game);
-        if (!game.state.gameActive) scheduleNextRound(game);
+        if (!game.state.gameActive) {
+            notifyCompletedRound(game);
+            scheduleNextRound(game);
+        }
     });
 
     socket.on('restartGame', (payload = {}) => {
