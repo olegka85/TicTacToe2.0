@@ -7,7 +7,7 @@ const token = '123456:TEST-SECRET';
 const authDate = Math.floor(Date.now() / 1000);
 function sign(values) {
     const params = new URLSearchParams(values);
-    const check = [...params.entries()].sort(([a], [b]) => a.localeCompare(b, 'en'))
+    const check = [...params.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
         .map(([k, v]) => k + '=' + v).join('\n');
     const key = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
     params.set('hash', crypto.createHmac('sha256', key).update(check).digest('hex'));
