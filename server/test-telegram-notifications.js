@@ -15,7 +15,9 @@ function sign(values) {
 }
 const raw = sign({ auth_date: String(authDate), user: JSON.stringify({ id: 1100220033, first_name: 'Марина' }) });
 assert.deepEqual(validateTelegramUser(raw, token, authDate), { id: 1100220033, firstName: 'Марина' });
-assert.equal(validateTelegramUser(raw.replace('Марина', 'Другая'), token, authDate), null);
+const tampered = new URLSearchParams(raw);
+tampered.set('user', JSON.stringify({ id: 1100220033, first_name: 'Другая' }));
+assert.equal(validateTelegramUser(tampered.toString(), token, authDate), null);
 assert.equal(validateTelegramUser(raw, 'another-token', authDate), null);
 assert.equal(validateTelegramUser(raw, token, authDate + 86401), null);
 assert.equal(validateTelegramUser('', token, authDate), null);
