@@ -14,3 +14,6 @@ Independent deployment of `TicTacToe2.0` from `master`.
 - A verified daily database backup is configured in `/etc/cron.d/peerivo-ttt20-backup`; private backups are in `/opt/peerivo/backups/ttt20` (14 days). To force a backup: `bash /opt/peerivo/ttt20/deploy/ttt20/backup.sh`.
 - Backup/restore and constraints: `docs/adr/001-persistent-rooms-and-alternating-starters.md`.
 - To use this domain in Telegram Mini App, set the Web App URL for `@tictactoe20_bot` in BotFather to `https://ttt20.peerivo.net/`.
+- To enable private Telegram result messages, set the secret `TTT20_TELEGRAM_BOT_TOKEN` in the server's Compose environment (never commit tokens), then recreate the socket service. It is passed into the container as `TELEGRAM_BOT_TOKEN`. Each user must start `@tictactoe20_bot` first. Telegram identities are accepted **only** from server-validated Mini App `initData`. Plain browser sessions keep playing without notifications.
+- Once after each server-verified online round: winner gets their own move count, loser gets a neutral message, draw gets a rematch invitation; each message links to the room and contains a private-chat inline `🎮 Играть ещё` Mini App button. Offline same-device matches currently have no Telegram identity/notifications.
+
