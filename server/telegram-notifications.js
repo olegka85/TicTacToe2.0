@@ -44,8 +44,7 @@ function moveWord(n) {
 }
 
 function formatRoundMessage({ won, draw, opponentName, winnerMoves, roomId }) {
-    const opponent = opponentName || 'соперником';
-    const against = opponentName ? 'с ' + opponent : 'с соперником';
+    const against = opponentName ? 'с игроком «' + opponentName + '»' : 'с соперником';
     let message;
     if (draw) {
         message = '🤝 Ничья!\n\nВы играли ' + against +
