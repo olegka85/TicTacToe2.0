@@ -10,6 +10,7 @@ services:
     environment:
       ROOM_DB_PATH: /data/rooms.sqlite
       NEXT_ROUND_DELAY_MS: "7000"
+      TELEGRAM_BOT_TOKEN: ${TTT20_TELEGRAM_BOT_TOKEN:-}
     read_only: true
     cap_drop:
       - ALL

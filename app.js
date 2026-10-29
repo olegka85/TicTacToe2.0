@@ -9,6 +9,7 @@ const SERVER_URL = SEARCH_PARAMS.get('server') ||
             : 'https://tictactoe-socket-production-7951.up.railway.app'));
 const SESSION_STORAGE_KEY = 'tictactoe.onlineSession.v1';
 const TELEGRAM_BOT_USERNAME = String(window.TICTACTOE_TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim();
+const telegramIdentity = () => ({ initData: (getTelegramWebApp() && getTelegramWebApp().initData) || '' });
 
 let socket = null;
 let socketConnectPromise = null;
@@ -280,7 +281,7 @@ function initSocket() {
         if (isMultiplayer && roomId && sessionToken && multiplayerStatus === 'disconnected') {
             multiplayerStatus = 'restoring';
             updateConnectionStatus('Восстанавливаем партию…', '#ffffff');
-            socket.emit('resumeGame', { roomId, sessionToken });
+            socket.emit('resumeGame', { roomId, sessionToken, ...telegramIdentity() });
             return;
         }
 
@@ -385,7 +386,7 @@ async function showCreateGame() {
         clearSavedSession();
         isMultiplayer = true;
         multiplayerStatus = 'creating';
-        activeSocket.emit('createGame');
+        activeSocket.emit('createGame', telegramIdentity());
         updateConnectionStatus('Создаём игру…', '#ffffff');
     } catch (error) {
         setVisible('multiplayerMenu', true);
@@ -408,7 +409,7 @@ async function joinGameByLink(code) {
 
     try {
         const activeSocket = await ensureSocketConnected();
-        activeSocket.emit('joinGame', { roomId: normalizedRoomId });
+        activeSocket.emit('joinGame', { roomId: normalizedRoomId, ...telegramIdentity() });
     } catch (error) {
         isMultiplayer = false;
         resetSessionState();
@@ -433,7 +434,7 @@ async function resumeSavedGame(savedSession) {
 
     try {
         const activeSocket = await ensureSocketConnected();
-        activeSocket.emit('resumeGame', { roomId, sessionToken });
+        activeSocket.emit('resumeGame', { roomId, sessionToken, ...telegramIdentity() });
     } catch (error) {
         multiplayerStatus = 'disconnected';
         updateConnectionStatus('🔴 Сервер недоступен: ' + error.message, '#ffb0b0');
