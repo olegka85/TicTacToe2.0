@@ -17,7 +17,7 @@ function validateTelegramUser(initData, token = BOT_TOKEN, now = Math.floor(Date
             authDate > now + 300 || now - authDate > 24 * 60 * 60) return null;
         const dataCheckString = entries
             .filter(([key]) => key !== 'hash' && key !== 'signature')
-            .sort(([a], [b]) => a.localeCompare(b, 'en'))
+            .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
             .map(([key, value]) => key + '=' + value)
             .join('\n');
         const secret = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
