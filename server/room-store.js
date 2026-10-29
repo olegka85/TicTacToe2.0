@@ -42,8 +42,8 @@ function createRoomStore(filePath = process.env.ROOM_DB_PATH) {
         return {
             id: game.id,
             players: {
-                X: game.players.X ? { sessionToken: game.players.X.sessionToken } : null,
-                O: game.players.O ? { sessionToken: game.players.O.sessionToken } : null
+                X: game.players.X ? { sessionToken: game.players.X.sessionToken, telegram: game.players.X.telegram || null } : null,
+                O: game.players.O ? { sessionToken: game.players.O.sessionToken, telegram: game.players.O.telegram || null } : null
             },
             state: game.state,
             roundNumber: game.roundNumber,
