@@ -208,3 +208,15 @@ test('invite without a bot username still works on the website', () => {
     c.run("roomId = 'ABCDEF'");
     assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=ABCDEF');
 });
+
+
+test('quick rules are accessible from the main screen and describe real gameplay', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+    assert.match(html, /<details id="gameRules" class="rules">/);
+    assert.match(html, /<summary>📖 Как играть/);
+    assert.match(html, /Поле 9×9 состоит из девяти маленьких полей 3×3/);
+    assert.match(html, /Выбранная клетка определяет/);
+    assert.match(html, /можно выбрать любое незавершённое поле/);
+    assert.match(html, /3 своих знака в ряд в любом маленьком поле/);
+    assert.match(html, /Новые раунды начинаются сами/);
+});

@@ -57,6 +57,29 @@
             backdrop-filter: blur(10px);
         }
 
+        .rules {
+            width: min(92vw, 520px);
+            margin-bottom: 14px;
+            padding: 11px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.12);
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .rules summary {
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .rules ol {
+            margin-top: 10px;
+            padding-left: 22px;
+        }
+
+        .rules li + li { margin-top: 6px; }
+
         .room-code {
             margin: 8px 0 2px;
             color: #ffe36e;
@@ -273,6 +296,17 @@
 </head>
 <body>
     <h1>🎮 Крестики-Нолики 2.0</h1>
+
+    <details id="gameRules" class="rules">
+        <summary>📖 Как играть · 3 в ряд — победа</summary>
+        <ol>
+            <li>Поле 9×9 состоит из девяти маленьких полей 3×3. Ходите по очереди.</li>
+            <li>Выбранная клетка определяет, в каком маленьком поле ходит соперник: например, центр отправляет в центральное поле.</li>
+            <li>Если нужное маленькое поле уже завершено, можно выбрать любое незавершённое поле.</li>
+            <li>Первым собери 3 своих знака в ряд в любом маленьком поле — и победа!</li>
+            <li>В онлайн-игре приглашённый ходит первым. Новые раунды начинаются сами, а первый игрок чередуется.</li>
+        </ol>
+    </details>
 
     <div id="mainMenu" class="menu">
         <button class="action-btn" type="button" onclick="startLocalGame()">📱 На одном устройстве</button>
