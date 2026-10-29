@@ -75,12 +75,12 @@ function createPlayer(socket, payload = {}) {
     return {
         sessionToken: createSessionToken(),
         socketId: socket.id,
-        telegram: validateTelegramUser(payload.initData)
+        telegram: validateTelegramUser(payload && payload.initData)
     };
 }
 
 function updateVerifiedTelegram(game, playerId, payload = {}) {
-    const telegram = validateTelegramUser(payload.initData);
+    const telegram = validateTelegramUser(payload && payload.initData);
     const player = game.players[playerId];
     if (telegram && player && (!player.telegram || player.telegram.id === telegram.id)) {
         player.telegram = telegram;
