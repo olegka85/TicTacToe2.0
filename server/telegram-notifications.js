@@ -59,7 +59,7 @@ function formatRoundMessage({ won, draw, opponentName, winnerMoves, roomId }) {
     }
     const link = new URL(GAME_URL);
     if (roomId) link.searchParams.set('room', roomId);
-    return { text: message + '\n\n🌐 ' + link.toString(), url: link.toString() };
+    return { text: message, url: link.toString() };
 }
 
 async function sendBotMessage(chatId, message, token = BOT_TOKEN, transport = globalThis.fetch) {
@@ -73,7 +73,7 @@ async function sendBotMessage(chatId, message, token = BOT_TOKEN, transport = gl
                 chat_id: chatId,
                 text: message.text,
                 reply_markup: {
-                    inline_keyboard: [[{ text: '🎮 Играть ещё', web_app: { url: message.url } }]]
+                    inline_keyboard: [[{ text: '🎮 Играть', web_app: { url: message.url } }]]
                 }
             })
         });
