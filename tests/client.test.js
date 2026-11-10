@@ -420,7 +420,7 @@ test('Telegram client release includes boot diagnosis but not sensitive initData
 
 test('main menu has an explicit join-by-code action even when Telegram SDK and URL parameters are missing', () => {
     const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
-    assert.match(html, /onclick="showMultiplayerMenu\\(\\)">🔑 Войти по коду приглашения/);
+    assert.ok(html.includes('onclick="showMultiplayerMenu()">🔑 Войти по коду приглашения'));
 });
 
 test('Telegram invitation share text always tells guests the visible room code', () => {
