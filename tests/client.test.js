@@ -65,6 +65,7 @@ function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot', sha
         // Client tests advance animation frames manually; no wall-clock timer is needed.
         setInterval() { return 1; },
         clearInterval() {},
+        setTimeout, clearTimeout,
         requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
         cancelAnimationFrame(id) { frames.delete(id); }
     });
@@ -273,4 +274,40 @@ test('Telegram creator resumes own saved room rather than joining as second play
     await new Promise(resolve => setImmediate(resolve));
     assert.ok(c.emitted.some(x => x.name === 'resumeGame' && x.payload.roomId === 'S68N7E'));
     assert.ok(!c.emitted.some(x => x.name === 'joinGame'));
+});
+
+test('Telegram invite joins immediately even if CloudStorage never calls back', async () => {
+    const c = client();
+    c.run("window.location.hash = '#tgWebAppStartParam=room_S68N7E&tgWebAppPlatform=android'");
+    c.run("window.Telegram = { WebApp: { initData: 'fixture', initDataUnsafe: { user: { id: 999 } }, CloudStorage: { getItem(_key,_cb) {} }, ready() {}, expand() {} } }");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(c.emitted.filter(x => x.name === 'joinGame').length, 1);
+    assert.equal(c.emitted.find(x => x.name === 'joinGame').payload.roomId, 'S68N7E');
+    assert.equal(c.emitted.filter(x => x.name === 'resumeGame').length, 0);
+});
+
+test('Main Mini App supports startapp query on direct WebView URL', async () => {
+    const c = client();
+    c.run("window.location.search = '?startapp=room_S68N7E'");
+    // SEARCH_PARAMS is initialized during boot, after location.search is set.
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'S68N7E'));
+});
+
+test('Invitation link from Telegram works when SDK has no initData', () => {
+    const c = client();
+    c.run("window.Telegram = { WebApp: { initData: '', ready() {}, expand() {} } }");
+    c.boot();
+    c.run("roomId = 'S68N7E'");
+    assert.equal(c.run('buildInviteUrl()'), 'https://t.me/tictactoe_test_bot?startapp=room_S68N7E');
+});
+
+test('A code entered manually starts joining the selected room', async () => {
+    const c = client(); c.boot();
+    c.elements.get('roomCodeInput').value = 's68n7e';
+    c.run('joinRoomFromCode()');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'S68N7E'));
 });
