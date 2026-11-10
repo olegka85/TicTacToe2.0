@@ -361,7 +361,8 @@ async function shareGame() {
     }
 
     const title = 'Крестики-Нолики 2.0';
-    const text = 'Сыграем в Крестики-Нолики 2.0? Нажми ссылку — она откроет нашу партию, первый ход твой.';
+    // The readable room code is essential when mobile Telegram drops start_param.
+    const text = 'Сыграем в Крестики-Нолики 2.0? Код комнаты: ' + roomId + '. Если Telegram откроет меню вместо партии, введи этот код. Первый ход твой!';
     const telegram = getTelegramWebApp();
 
     if (telegram && telegram.initData && typeof telegram.openTelegramLink === 'function') {
