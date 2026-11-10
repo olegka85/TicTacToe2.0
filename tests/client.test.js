@@ -191,12 +191,13 @@ test('returning to menu cancels all celebration work', () => {
 });
 
 
-test('Telegram Mini App invite uses Telegram deep link', () => {
+test('Telegram user invitations bypass BotFather startapp and target the game room directly', () => {
     const c = client();
     c.run("window.Telegram = { WebApp: { initData: 'fixture', ready() {}, expand() {} } }");
     c.boot();
     c.run("roomId = 'ABCDEF'");
-    assert.equal(c.run('buildInviteUrl()'), 'https://t.me/tictactoe_test_bot?startapp=room_ABCDEF');
+    assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=ABCDEF');
+    assert.doesNotMatch(c.run('buildInviteUrl()'), /t\\.me/);
 });
 
 test('web browser invite stays on the current website', () => {
@@ -301,7 +302,7 @@ test('Invitation link from Telegram works when SDK has no initData', () => {
     c.run("window.Telegram = { WebApp: { initData: '', ready() {}, expand() {} } }");
     c.boot();
     c.run("roomId = 'S68N7E'");
-    assert.equal(c.run('buildInviteUrl()'), 'https://t.me/tictactoe_test_bot?startapp=room_S68N7E');
+    assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=S68N7E');
 });
 
 test('A code entered manually starts joining the selected room', async () => {
@@ -310,4 +311,32 @@ test('A code entered manually starts joining the selected room', async () => {
     c.run('joinRoomFromCode()');
     await new Promise(resolve => setImmediate(resolve));
     assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'S68N7E'));
+});
+
+test('room invite URL auto-joins for a first-time user without Telegram SDK or bot start', async () => {
+    const c = client();
+    c.run("window.location.search = '?room=7HDT4D'");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    const joins = c.emitted.filter(x => x.name === 'joinGame');
+    assert.equal(joins.length, 1);
+    assert.equal(joins[0].payload.roomId, '7HDT4D');
+    assert.equal(c.emitted.filter(x => x.name === 'resumeGame').length, 0);
+});
+
+test('room invite URL prioritizes requested room over old saved game', async () => {
+    const keys = new Map([['tictactoe.onlineSession.v1', JSON.stringify({
+        roomId: 'OTHER1', sessionToken: 'existing-session-token-long', playerId: 'O'
+    })]]);
+    const storage = {
+        getItem: key => keys.get(key) || null,
+        setItem: (key, value) => keys.set(key, value),
+        removeItem: key => keys.delete(key)
+    };
+    const c = client({ sharedStorage: storage });
+    c.run("window.location.search = '?room=7HDT4D'");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === '7HDT4D'));
+    assert.ok(!c.emitted.some(x => x.name === 'resumeGame'));
 });

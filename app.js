@@ -206,14 +206,14 @@ function persistCurrentSession() {
 function buildInviteUrl() {
     if (!roomId) return '';
 
-    const telegram = getTelegramWebApp();
-    if (telegram && TELEGRAM_BOT_USERNAME) {
-        const startParam = 'room_' + roomId;
-        return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
-    }
-
-    // Browser-to-browser invitations stay on this site; Telegram invitations open the Mini App.
-    const url = new URL(window.location.pathname || '/', window.location.origin);
+    // Do not use t.me/bot?startapp here: Telegram only forwards startapp
+    // when the bot's Main Mini App is explicitly configured in BotFather.
+    // The direct room URL works from Telegram chats, first-time users,
+    // desktop/mobile browsers and independently of Telegram bot setup.
+    const base = window.location.hostname === 'ttt20.peerivo.net'
+        ? 'https://ttt20.peerivo.net/'
+        : new URL(window.location.pathname || '/', window.location.origin).toString();
+    const url = new URL(base);
     url.searchParams.set('room', roomId);
     return url.toString();
 }
@@ -221,7 +221,7 @@ function buildInviteUrl() {
 async function copyGameLink() {
     const inviteUrl = buildInviteUrl();
     if (!inviteUrl) {
-        updateConnectionStatus('⚠️ Telegram-ссылка для приглашения не настроена', '#ffe49a');
+        updateConnectionStatus('⚠️ Не удалось создать ссылку приглашения', '#ffe49a');
         return;
     }
 
@@ -241,12 +241,12 @@ async function copyGameLink() {
 async function shareGame() {
     const inviteUrl = buildInviteUrl();
     if (!inviteUrl) {
-        updateConnectionStatus('⚠️ Telegram-ссылка для приглашения не настроена', '#ffe49a');
+        updateConnectionStatus('⚠️ Не удалось создать ссылку приглашения', '#ffe49a');
         return;
     }
 
     const title = 'Крестики-Нолики 2.0';
-    const text = 'Сыграем? Открой ссылку — первый ход будет твоим.';
+    const text = 'Сыграем в Крестики-Нолики 2.0? Нажми ссылку — она откроет нашу партию, первый ход твой.';
     const telegram = getTelegramWebApp();
 
     if (telegram && telegram.initData && typeof telegram.openTelegramLink === 'function') {
