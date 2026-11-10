@@ -417,3 +417,13 @@ test('Telegram client release includes boot diagnosis but not sensitive initData
     assert.ok(!diag.includes('secret-hash'));
     assert.ok(!diag.includes('auth_date'));
 });
+
+test('main menu has an explicit join-by-code action even when Telegram SDK and URL parameters are missing', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+    assert.match(html, /onclick="showMultiplayerMenu\\(\\)">🔑 Войти по коду приглашения/);
+});
+
+test('Telegram invitation share text always tells guests the visible room code', () => {
+    assert.match(appSource, /Код комнаты: ' \\+ roomId/);
+    assert.match(appSource, /Если Telegram откроет меню вместо партии/);
+});
