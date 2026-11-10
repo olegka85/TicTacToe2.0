@@ -366,7 +366,7 @@ test('Telegram startapp link has room code and the website link remains availabl
     assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=QPK96M');
 });
 
-test('Telegram SDK without start_param displays visible manual room entry and safe diagnostics', () => {
+test('Telegram SDK without start_param displays visible manual room entry and safe diagnostics', async () => {
     const c = client();
     c.run("window.Telegram = { WebApp: { initData: '', platform: 'android', initDataUnsafe: {}, ready() {}, expand() {} } }");
     c.boot();
@@ -376,15 +376,17 @@ test('Telegram SDK without start_param displays visible manual room entry and sa
     assert.doesNotMatch(c.elements.get('telegramDebugOutput').textContent, /hash=|signature=|auth_date=/);
     c.elements.get('telegramRoomCodeInput').value = 'qpk96m';
     c.run('joinTelegramFallbackCode()');
+    await new Promise(resolve => setImmediate(resolve));
     assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'QPK96M'));
 });
 
-test('Telegram startapp carried inside nested tgWebAppData is extracted', () => {
+test('Telegram startapp carried inside nested tgWebAppData is extracted', async () => {
     const c = client();
     c.run("window.location.hash = '#tgWebAppData=start_param%3Droom_QPK96M%26auth_date%3D1&tgWebAppPlatform=android'");
     c.boot();
     assert.equal(c.run('getInviteRoomId()'), 'QPK96M');
     assert.equal(c.elements.get('telegramLaunchHelp').hidden, true);
+    await new Promise(resolve => setImmediate(resolve));
     assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'QPK96M'));
 });
 
