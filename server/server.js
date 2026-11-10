@@ -16,6 +16,40 @@ app.get('/health', (_req, res) => {
     });
 });
 
+// Read-only launch telemetry helps diagnose lost startapp parameters in
+// Telegram WebViews. Accept a strict allowlist: never log Telegram initData,
+// authorization tokens, chat/user IDs, user-agent strings or full URLs.
+const launchRate = new Map();
+app.post('/api/launch-report', express.json({ limit: '1kb' }), (req, res) => {
+    const now = Date.now();
+    const ip = req.ip || 'unknown';
+    const old = launchRate.get(ip);
+    if (old && now - old.at < 60000 && old.count >= 30) return res.sendStatus(429);
+    if (launchRate.size > 2048) launchRate.clear();
+    launchRate.set(ip, old && now - old.at < 60000
+        ? { at: old.at, count: old.count + 1 } : { at: now, count: 1 });
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const patterns = {
+        trace: /^[A-Z0-9]{4,12}$/,
+        stage: /^[a-z-]{2,24}$/,
+        sdk: /^(?:loaded|absent)$/,
+        room: /^(?:[A-Z2-9]{6}|missing)$/,
+        platform: /^[a-zA-Z0-9_-]{1,24}$/,
+        errorCode: /^[A-Z0-9_]{0,36}$/
+    };
+    const safe = {};
+    for (const [key, pattern] of Object.entries(patterns)) {
+        if (typeof body[key] === 'string' && pattern.test(body[key])) safe[key] = body[key];
+    }
+    for (const key of ['queryStart', 'hashStart', 'bridgeStart']) {
+        if (typeof body[key] === 'boolean') safe[key] = body[key];
+    }
+    if (!safe.trace || !safe.stage) return res.sendStatus(400);
+    console.log('TG_LAUNCH', JSON.stringify(safe));
+    res.sendStatus(204);
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {

@@ -80,15 +80,130 @@ function getInviteRoomId() {
         SEARCH_PARAMS.get('tgWebAppStartParam'),
         hashParams.get('startapp'),
         hashParams.get('tgWebAppStartParam'),
+        hashParams.get('room'),
+        (hash.includes('?') ? new URLSearchParams(hash.slice(hash.indexOf('?') + 1)).get('tgWebAppStartParam') : null),
+        (hashParams.get('tgWebAppData') ? new URLSearchParams(hashParams.get('tgWebAppData')).get('start_param') : null),
         telegram && telegram.initDataUnsafe && telegram.initDataUnsafe.start_param,
         initData && initData.get('start_param')
     ];
+    // Telegram may rewrite its URL between page navigation and SDK readiness.
+    if (typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function') {
+        try {
+            const entry = performance.getEntriesByType('navigation')[0];
+            if (entry && entry.name) {
+                const initial = new URL(entry.name);
+                candidates.push(initial.searchParams.get('tgWebAppStartParam'));
+                candidates.push(new URLSearchParams(initial.hash.replace(/^#/, '')).get('tgWebAppStartParam'));
+            }
+        } catch (_error) {}
+    }
     for (const value of candidates) {
         if (typeof value !== 'string') continue;
         const room = normalizeRoomCode(value.replace(/^room[_-]?/i, ''));
         if (room) return room;
     }
     return null;
+}
+
+
+// No initData, user ID, signatures or session tokens are included in diagnostics.
+const LAUNCH_TRACE = Math.random().toString(36).slice(2, 10).toUpperCase();
+const CLIENT_RELEASE = '20261110-telegram-debug';
+
+function isTelegramLaunch() {
+    const hash = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    return Boolean(getTelegramWebApp() ||
+        SEARCH_PARAMS.has('tgWebAppPlatform') || hash.has('tgWebAppPlatform') ||
+        (typeof navigator !== 'undefined' && /Telegram/i.test(navigator.userAgent || '')));
+}
+
+function launchDiagnostics() {
+    const sdk = getTelegramWebApp();
+    const hash = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    const rawStart = sdk && sdk.initDataUnsafe && sdk.initDataUnsafe.start_param;
+    return {
+        release: CLIENT_RELEASE, trace: LAUNCH_TRACE,
+        launch: isTelegramLaunch() ? 'telegram' : 'browser',
+        sdk: sdk ? 'loaded' : 'absent',
+        platform: String((sdk && sdk.platform) || hash.get('tgWebAppPlatform') || 'unknown').slice(0, 24),
+        queryStart: SEARCH_PARAMS.has('tgWebAppStartParam'),
+        hashStart: hash.has('tgWebAppStartParam'),
+        bridgeStart: Boolean(rawStart),
+        initDataStart: Boolean(sdk && sdk.initData && new URLSearchParams(sdk.initData).get('start_param')),
+        requestedRoom: getInviteRoomId() || 'missing',
+        currentRoom: roomId || 'none',
+        socket: socket && socket.connected ? 'connected' : 'disconnected',
+        game: multiplayerStatus
+    };
+}
+
+function reportLaunch(stage, errorCode) {
+    const data = launchDiagnostics();
+    if (data.launch !== 'telegram' && !SEARCH_PARAMS.has('debug')) return;
+    const report = {
+        trace: data.trace, stage: stage, sdk: data.sdk,
+        room: data.requestedRoom, platform: data.platform,
+        queryStart: data.queryStart, hashStart: data.hashStart,
+        bridgeStart: data.bridgeStart, errorCode: errorCode || ''
+    };
+    console.info('[TTT20 launch]', report);
+    if (typeof fetch === 'function') {
+        try {
+            void fetch('/api/launch-report', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(report), keepalive: true
+            }).catch(() => {});
+        } catch (_error) {}
+    }
+}
+
+function updateTelegramLaunchHelp() {
+    const hasTelegram = isTelegramLaunch();
+    const details = $('telegramDebugDetails');
+    const fallback = $('telegramLaunchHelp');
+    if (details) details.hidden = !hasTelegram && !SEARCH_PARAMS.has('debug');
+    if (fallback) fallback.hidden = !hasTelegram || Boolean(getInviteRoomId()) || isMultiplayer;
+    const output = $('telegramDebugOutput');
+    if (output) output.textContent = JSON.stringify(launchDiagnostics(), null, 2);
+}
+
+function copyLaunchDiagnostics() {
+    const info = JSON.stringify(launchDiagnostics(), null, 2);
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(info).then(() => {
+            updateConnectionStatus('Диагностика скопирована', '#b8ffbf');
+        }).catch(() => updateConnectionStatus(info, '#ffffff'));
+    } else {
+        updateConnectionStatus(info, '#ffffff');
+    }
+}
+
+function joinTelegramFallbackCode() {
+    const code = normalizeRoomCode($('telegramRoomCodeInput').value);
+    if (!code) {
+        updateConnectionStatus('⚠️ Введите код комнаты из 6 символов', '#ffe49a');
+        return;
+    }
+    reportLaunch('manual-code');
+    void joinGameByLink(code);
+}
+
+function buildTelegramInviteUrl() {
+    if (!roomId || !TELEGRAM_BOT_USERNAME) return buildInviteUrl();
+    return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=room_' + roomId;
+}
+
+async function copyTelegramGameLink() {
+    const link = buildTelegramInviteUrl();
+    if (!link) return;
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+            await navigator.clipboard.writeText(link);
+            updateConnectionStatus('Ссылка Telegram скопирована: ' + roomId, '#b8ffbf');
+            return;
+        }
+    } catch (_error) {}
+    updateConnectionStatus(link, '#ffffff');
 }
 
 function localSessionStorageKey() {
@@ -239,7 +354,7 @@ async function copyGameLink() {
 }
 
 async function shareGame() {
-    const inviteUrl = buildInviteUrl();
+    const inviteUrl = buildTelegramInviteUrl();
     if (!inviteUrl) {
         updateConnectionStatus('⚠️ Не удалось создать ссылку приглашения', '#ffe49a');
         return;
@@ -351,6 +466,7 @@ function initSocket() {
     socket.on('gameError', (payload) => {
         const message = payload && payload.message ? payload.message : 'Ошибка игры';
         const code = payload && payload.code ? payload.code : 'GAME_ERROR';
+        reportLaunch('game-error', code);
         const enteringGame = multiplayerStatus === 'joining' || multiplayerStatus === 'restoring';
 
         if (enteringGame && ['ROOM_NOT_FOUND', 'INVALID_SESSION', 'ROOM_FULL', 'INVALID_ROOM'].includes(code)) {
@@ -453,6 +569,7 @@ async function joinGameByLink(code) {
 
     try {
         const activeSocket = await ensureSocketConnected();
+        reportLaunch('join-sent');
         activeSocket.emit('joinGame', { roomId: normalizedRoomId });
     } catch (error) {
         isMultiplayer = false;
@@ -526,6 +643,8 @@ function handleGameState(payload) {
     myPlayerId = payload.playerId;
     sessionToken = payload.sessionToken || sessionToken;
     multiplayerStatus = payload.status;
+    reportLaunch('game-state');
+    updateTelegramLaunchHelp();
     opponentConnected = Boolean(
         payload.players &&
         payload.players.connected &&
@@ -987,16 +1106,24 @@ function initializeTelegramWebApp(loadedLate = false) {
     telegramWebApp.ready();
     telegramWebApp.expand();
 
-    // Telegram's SDK loads before app.js (see index.html). If it later
-    // initializes again, do not run the join flow twice.
-    if (loadedLate && !isMultiplayer && !roomId && $('gameContainer').hidden && !readLocalSession()) {
-        void restoreOrJoinOnlineGame();
+    // When the SDK arrives after the initial boot, the start_param can
+    // appear only then. Never suppress an invitation because an older
+    // localStorage game exists.
+    updateTelegramLaunchHelp();
+    if (loadedLate) {
+        reportLaunch('sdk-loaded');
+        const lateInvite = getInviteRoomId();
+        if (lateInvite && (!isMultiplayer || roomId !== lateInvite)) {
+            void restoreOrJoinOnlineGame();
+        }
     }
 }
 
 window.addEventListener('ttt-telegram-sdk-loaded', () => initializeTelegramWebApp(true));
 initializeTelegramWebApp();
-restoreOrJoinOnlineGame();
+updateTelegramLaunchHelp();
+reportLaunch('boot');
+void restoreOrJoinOnlineGame();
 // Count down to the next automatic round without rebuilding the game board.
 setInterval(() => {
     if (isMultiplayer && multiplayerStatus === 'finished' && nextRoundAt) updateMultiplayerStatus();

@@ -13,6 +13,7 @@ function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot', sha
     const frames = new Map();
     const resizeListeners = new Set();
     const events = new Map();
+    const windowEvents = new Map();
     const emitted = [];
     let now = 0;
     let frameId = 0;
@@ -56,7 +57,15 @@ function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot', sha
             location: { search: '', hash: '', hostname: 'localhost', pathname: '/', origin: 'http://localhost' },
             innerWidth: 390, innerHeight: 844, devicePixelRatio: 2,
             matchMedia: () => ({ matches: reducedMotion }),
-            addEventListener: (name, fn) => { if (name === 'resize') resizeListeners.add(fn); },
+            addEventListener: (name, fn) => {
+                if (name === 'resize') resizeListeners.add(fn);
+                const list = windowEvents.get(name) || [];
+                list.push(fn);
+                windowEvents.set(name, list);
+            },
+            dispatchEvent: event => {
+                for (const callback of windowEvents.get(event.type) || []) callback(event);
+            },
             removeEventListener: (name, fn) => { if (name === 'resize') resizeListeners.delete(fn); }
         },
         io: () => socket,
@@ -348,4 +357,63 @@ test('Telegram SDK never blocks initial game client bootstrap', () => {
     assert.match(html, /<script async src="https:\/\/telegram\.org\/js\/telegram-web-app\.js"/);
     assert.match(html, /onload="window\.dispatchEvent\(/);
     assert.ok(html.indexOf('telegram-web-app.js') < html.indexOf('app.js?v='));
+});
+
+test('Telegram startapp link has room code and the website link remains available', () => {
+    const c = client(); c.boot();
+    c.run("roomId = 'QPK96M'");
+    assert.equal(c.run('buildTelegramInviteUrl()'), 'https://t.me/tictactoe_test_bot?startapp=room_QPK96M');
+    assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=QPK96M');
+});
+
+test('Telegram SDK without start_param displays visible manual room entry and safe diagnostics', async () => {
+    const c = client();
+    c.run("window.Telegram = { WebApp: { initData: '', platform: 'android', initDataUnsafe: {}, ready() {}, expand() {} } }");
+    c.boot();
+    assert.equal(c.elements.get('telegramLaunchHelp').hidden, false);
+    assert.equal(c.elements.get('telegramDebugDetails').hidden, false);
+    assert.match(c.elements.get('telegramDebugOutput').textContent, /"requestedRoom": "missing"/);
+    assert.doesNotMatch(c.elements.get('telegramDebugOutput').textContent, /hash=|signature=|auth_date=/);
+    c.elements.get('telegramRoomCodeInput').value = 'qpk96m';
+    c.run('joinTelegramFallbackCode()');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'QPK96M'));
+});
+
+test('Telegram startapp carried inside nested tgWebAppData is extracted', async () => {
+    const c = client();
+    c.run("window.location.hash = '#tgWebAppData=start_param%3Droom_QPK96M%26auth_date%3D1&tgWebAppPlatform=android'");
+    c.boot();
+    assert.equal(c.run('getInviteRoomId()'), 'QPK96M');
+    assert.equal(c.elements.get('telegramLaunchHelp').hidden, true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'QPK96M'));
+});
+
+test('late-loaded Telegram SDK can override older saved room with a newly received invitation', async () => {
+    const keys = new Map([['tictactoe.onlineSession.v1.tg.123', JSON.stringify({
+        roomId: 'OTHER1', sessionToken: 'old-session-long-enough', playerId: 'O'
+    })]]);
+    const storage = {
+        getItem: key => keys.get(key) || null,
+        setItem: (key, value) => keys.set(key, value),
+        removeItem: key => keys.delete(key)
+    };
+    const c = client({ sharedStorage: storage });
+    c.boot();
+    c.run("window.Telegram = { WebApp: { initData: '', initDataUnsafe: { user: { id: 123 }, start_param: 'room_QPK96M' }, platform: 'android', ready() {}, expand() {} } }");
+    c.run("window.dispatchEvent({type:'ttt-telegram-sdk-loaded'})");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'QPK96M'));
+});
+
+test('Telegram client release includes boot diagnosis but not sensitive initData', () => {
+    const c = client();
+    c.run("window.Telegram = { WebApp: { initData: 'start_param=room_QPK96M&hash=secret-hash&auth_date=123', initDataUnsafe: { start_param: 'room_QPK96M' }, platform: 'android', ready() {}, expand() {} } }");
+    c.boot();
+    const diag = c.run('JSON.stringify(launchDiagnostics())');
+    assert.ok(diag.includes('QPK96M'));
+    assert.ok(diag.includes('"bridgeStart":true'));
+    assert.ok(!diag.includes('secret-hash'));
+    assert.ok(!diag.includes('auth_date'));
 });
