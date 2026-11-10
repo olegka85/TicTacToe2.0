@@ -290,6 +290,33 @@ async function main() {
         returningCreator.emit('leaveGame');
         returningGuest.emit('leaveGame');
 
+        // A sent invitation remains valid even when its creator presses
+        // Back or starts another game while waiting for the recipient.
+        const inviter = await connectClient('inviter');
+        sockets.push(inviter);
+        const firstInviteWait = waitForState(inviter, p => p.status === 'waiting' && p.playerId === 'O', 'first invitation');
+        inviter.emit('createGame');
+        const sentInvitation = await firstInviteWait;
+        inviter.emit('leaveGame');
+        const secondInviteWait = waitForState(inviter,
+            p => p.status === 'waiting' && p.playerId === 'O' && p.roomId !== sentInvitation.roomId,
+            'next invitation');
+        inviter.emit('createGame');
+        const nextInvitation = await secondInviteWait;
+        assert.notStrictEqual(nextInvitation.roomId, sentInvitation.roomId);
+        const invitedPlayer = await connectClient('invited after creator left');
+        sockets.push(invitedPlayer);
+        const joinedOldInviteWait = waitForState(invitedPlayer, p =>
+            p.status === 'playing' && p.playerId === 'X' && p.roomId === sentInvitation.roomId,
+            'old invitation must remain usable');
+        invitedPlayer.emit('joinGame', { roomId: sentInvitation.roomId });
+        const joinedOldInvite = await joinedOldInviteWait;
+        assert.strictEqual(joinedOldInvite.players.connected.O, false);
+        assert.strictEqual(joinedOldInvite.players.X, true);
+        console.log('Previously shared invitation remains valid after creator exits / opens a new room.');
+        invitedPlayer.emit('leaveGame');
+        inviter.emit('leaveGame');
+
         console.log('All asynchronous multiplayer session tests passed.');
     } finally {
         for (const socket of sockets) {
