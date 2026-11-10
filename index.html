@@ -315,6 +315,9 @@
 
     <div id="multiplayerMenu" class="menu" hidden>
         <button class="action-btn" type="button" onclick="showCreateGame()">🆕 Создать онлайн-игру</button>
+        <label for="roomCodeInput" class="helper-text">Есть приглашение, но ссылка не открыла партию? Введите код комнаты:</label>
+        <input id="roomCodeInput" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false" inputmode="text" placeholder="Код из 6 символов" aria-label="Код игровой комнаты" style="width:min(100%,270px);padding:12px;border-radius:12px;box-sizing:border-box;text-align:center;text-transform:uppercase;font-size:18px;letter-spacing:2px">
+        <button class="action-btn secondary" type="button" onclick="joinRoomFromCode()">🎮 Войти по коду</button>
         <button class="action-btn secondary" type="button" onclick="backToMainMenu()">↩️ Назад</button>
     </div>
 
@@ -356,6 +359,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="server/game-rules.js?v=20261024-alternate-starters"></script>
-    <script src="app.js?v=20261110-invite-deeplink"></script>
+    <script src="app.js?v=20261110-reliable-invite"></script>
 </body>
 </html>
