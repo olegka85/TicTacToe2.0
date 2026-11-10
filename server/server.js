@@ -277,6 +277,9 @@ io.on('connection', (socket) => {
 
     socket.on('joinGame', (payload) => {
         const roomId = normalizeRoomId(payload);
+        // This event is useful for diagnosing deep-link failures without
+        // collecting Telegram identities, session tokens or initData.
+        console.log('Вход по приглашению, комната: ' + (roomId || '<missing>'));
         if (!/^[A-Z2-9]{6}$/.test(roomId)) {
             emitGameError(socket, 'Некорректная ссылка на игру', 'INVALID_ROOM');
             return;
