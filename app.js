@@ -65,17 +65,40 @@ function getTelegramWebApp() {
 }
 
 function getInviteRoomId() {
-    const queryRoom = normalizeRoomCode(SEARCH_PARAMS.get('room'));
-    if (queryRoom) return queryRoom;
-
+    // Telegram supplies the startapp payload in tgWebAppStartParam (often in
+    // the URL fragment) and in WebApp.initDataUnsafe.start_param.
+    // The URL value is available even if the Telegram SDK is slow to load.
+    const hash = typeof window.location.hash === 'string' ? window.location.hash.replace(/^#/, '') : '';
+    const hashParams = new URLSearchParams(hash);
     const telegram = getTelegramWebApp();
-    const startParam = telegram && telegram.initDataUnsafe
-        ? telegram.initDataUnsafe.start_param
+    const initData = telegram && typeof telegram.initData === 'string'
+        ? new URLSearchParams(telegram.initData)
         : null;
-    if (!startParam) return null;
+    const candidates = [
+        SEARCH_PARAMS.get('room'),
+        SEARCH_PARAMS.get('tgWebAppStartParam'),
+        hashParams.get('tgWebAppStartParam'),
+        telegram && telegram.initDataUnsafe && telegram.initDataUnsafe.start_param,
+        initData && initData.get('start_param')
+    ];
+    for (const value of candidates) {
+        if (typeof value !== 'string') continue;
+        const room = normalizeRoomCode(value.replace(/^room[_-]?/i, ''));
+        if (room) return room;
+    }
+    return null;
+}
 
-    const normalizedStartParam = String(startParam).replace(/^room[_-]?/i, '');
-    return normalizeRoomCode(normalizedStartParam);
+function localSessionStorageKey() {
+    // A Telegram WebView's localStorage may survive switching accounts.
+    // Never resume a previous account's session from a shared origin.
+    const telegram = getTelegramWebApp();
+    const telegramId = telegram && telegram.initDataUnsafe && telegram.initDataUnsafe.user
+        ? telegram.initDataUnsafe.user.id
+        : null;
+    return Number.isSafeInteger(telegramId) && telegramId > 0
+        ? SESSION_STORAGE_KEY + '.tg.' + telegramId
+        : SESSION_STORAGE_KEY;
 }
 
 function isSavedSession(value) {
@@ -91,7 +114,7 @@ function isSavedSession(value) {
 function readLocalSession() {
     try {
         if (typeof localStorage === 'undefined') return null;
-        const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+        const raw = localStorage.getItem(localSessionStorageKey());
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         return isSavedSession(parsed) ? parsed : null;
@@ -106,7 +129,7 @@ function writeSavedSession(value) {
     const serialized = JSON.stringify(value);
     try {
         if (typeof localStorage !== 'undefined') {
-            localStorage.setItem(SESSION_STORAGE_KEY, serialized);
+            localStorage.setItem(localSessionStorageKey(), serialized);
         }
     } catch (_error) {
         // Browser storage can be unavailable in privacy modes; Telegram CloudStorage is a fallback.
@@ -122,7 +145,7 @@ function writeSavedSession(value) {
 function clearSavedSession() {
     try {
         if (typeof localStorage !== 'undefined') {
-            localStorage.removeItem(SESSION_STORAGE_KEY);
+            localStorage.removeItem(localSessionStorageKey());
         }
     } catch (_error) {
         // Ignore unavailable browser storage.
@@ -442,8 +465,11 @@ async function resumeSavedGame(savedSession) {
 }
 
 async function restoreOrJoinOnlineGame() {
-    const inviteRoomId = getInviteRoomId();
+    const initialInviteRoomId = getInviteRoomId();
     const savedSession = await readSavedSession();
+    // If the Telegram SDK became available while CloudStorage was resolving,
+    // still honor the invite instead of restoring a different old room.
+    const inviteRoomId = getInviteRoomId() || initialInviteRoomId;
 
     if (inviteRoomId && savedSession && savedSession.roomId === inviteRoomId) {
         await resumeSavedGame(savedSession);
@@ -929,8 +955,8 @@ function initializeTelegramWebApp(loadedLate = false) {
     telegramWebApp.ready();
     telegramWebApp.expand();
 
-    // The remote Telegram SDK may finish after the standalone game has loaded.
-    // Recover Telegram deep links / CloudStorage without switching away from an active game.
+    // Telegram's SDK loads before app.js (see index.html). If it later
+    // initializes again, do not run the join flow twice.
     if (loadedLate && !isMultiplayer && !roomId && $('gameContainer').hidden && !readLocalSession()) {
         void restoreOrJoinOnlineGame();
     }

@@ -8,7 +8,7 @@ const GameRules = require('../server/game-rules');
 const appSource = fs.readFileSync(process.env.APP_SOURCE || path.join(__dirname, '../app.js'), 'utf8');
 
 // Exercise the actual client with a small DOM/socket/animation-clock adapter.
-function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot' } = {}) {
+function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot', sharedStorage = null } = {}) {
     const elements = new Map();
     const frames = new Map();
     const resizeListeners = new Set();
@@ -48,11 +48,12 @@ function client({ reducedMotion = false, botUsername = 'tictactoe_test_bot' } = 
     };
     const context = vm.createContext({
         GameRules, console, URL, URLSearchParams,
+        ...(sharedStorage ? { localStorage: sharedStorage } : {}),
         Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
         document: { getElementById: id => elements.get(id), createElement: element },
         window: {
             TICTACTOE_TELEGRAM_BOT_USERNAME: botUsername,
-            location: { search: '', hostname: 'localhost', pathname: '/', origin: 'http://localhost' },
+            location: { search: '', hash: '', hostname: 'localhost', pathname: '/', origin: 'http://localhost' },
             innerWidth: 390, innerHeight: 844, devicePixelRatio: 2,
             matchMedia: () => ({ matches: reducedMotion }),
             addEventListener: (name, fn) => { if (name === 'resize') resizeListeners.add(fn); },
@@ -219,4 +220,57 @@ test('quick rules are accessible from the main screen and describe real gameplay
     assert.match(html, /можно выбрать любое незавершённое поле/);
     assert.match(html, /3 своих знака в ряд в любом маленьком поле/);
     assert.match(html, /Новые раунды начинаются сами/);
+});
+
+
+test('Telegram startapp invitation in URL fragment joins room on first opening', async () => {
+    const c = client();
+    c.run("window.location.hash = '#tgWebAppStartParam=room_S68N7E&tgWebAppPlatform=android'");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    const actions = c.emitted.filter(x => x.name === 'joinGame' || x.name === 'resumeGame');
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0].name, 'joinGame');
+    assert.equal(actions[0].payload.roomId, 'S68N7E');
+});
+
+test('Telegram startapp invitation from SDK joins room', async () => {
+    const c = client();
+    c.run("window.Telegram = { WebApp: { initData: 'start_param=room_S68N7E', initDataUnsafe: { start_param: 'room_S68N7E', user: { id: 456 } }, ready() {}, expand() {} } }");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'S68N7E'));
+});
+
+test('Telegram invite ignores saved room belonging to another account', async () => {
+    const oldSession = JSON.stringify({ roomId: 'S68N7E', sessionToken: 'token-from-other-telegram-account', playerId: 'O' });
+    const keys = new Map([['tictactoe.onlineSession.v1.tg.111', oldSession]]);
+    const storage = {
+        getItem: key => keys.get(key) || null,
+        setItem: (key, value) => keys.set(key, value),
+        removeItem: key => keys.delete(key)
+    };
+    const c = client({ sharedStorage: storage });
+    c.run("window.Telegram = { WebApp: { initData: 'fixture', initDataUnsafe: { user: { id: 222 }, start_param: 'room_S68N7E' }, ready() {}, expand() {} } }");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === 'S68N7E'));
+    assert.ok(!c.emitted.some(x => x.name === 'resumeGame'));
+    assert.equal(keys.get('tictactoe.onlineSession.v1.tg.111'), oldSession);
+});
+
+test('Telegram creator resumes own saved room rather than joining as second player', async () => {
+    const oldSession = JSON.stringify({ roomId: 'S68N7E', sessionToken: 'creator-secret-session-token', playerId: 'O' });
+    const keys = new Map([['tictactoe.onlineSession.v1.tg.111', oldSession]]);
+    const storage = {
+        getItem: key => keys.get(key) || null,
+        setItem: (key, value) => keys.set(key, value),
+        removeItem: key => keys.delete(key)
+    };
+    const c = client({ sharedStorage: storage });
+    c.run("window.Telegram = { WebApp: { initData: 'fixture', initDataUnsafe: { user: { id: 111 }, start_param: 'room_S68N7E' }, ready() {}, expand() {} } }");
+    c.boot();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(c.emitted.some(x => x.name === 'resumeGame' && x.payload.roomId === 'S68N7E'));
+    assert.ok(!c.emitted.some(x => x.name === 'joinGame'));
 });
