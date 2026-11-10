@@ -340,3 +340,12 @@ test('room invite URL prioritizes requested room over old saved game', async () 
     assert.ok(c.emitted.some(x => x.name === 'joinGame' && x.payload.roomId === '7HDT4D'));
     assert.ok(!c.emitted.some(x => x.name === 'resumeGame'));
 });
+
+// The Telegram CDN may be blocked or slow in some networks. Loading the
+// Telegram SDK synchronously freezes HTML parsing before app.js can join.
+test('Telegram SDK never blocks initial game client bootstrap', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+    assert.match(html, /<script async src="https:\/\/telegram\.org\/js\/telegram-web-app\.js"/);
+    assert.match(html, /onload="window\.dispatchEvent\(/);
+    assert.ok(html.indexOf('telegram-web-app.js') < html.indexOf('app.js?v='));
+});
