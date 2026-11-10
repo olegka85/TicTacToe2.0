@@ -325,6 +325,7 @@
     <div id="mainMenu" class="menu">
         <button class="action-btn" type="button" onclick="startLocalGame()">📱 На одном устройстве</button>
         <button class="action-btn" type="button" onclick="showMultiplayerMenu()">🌐 Онлайн игра</button>
+        <button class="action-btn secondary" type="button" onclick="showMultiplayerMenu()">🔑 Войти по коду приглашения</button>
     </div>
 
     <div id="multiplayerMenu" class="menu" hidden>
@@ -374,6 +375,6 @@
     <script async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('ttt-telegram-sdk-loaded'))"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="server/game-rules.js?v=20261024-alternate-starters"></script>
-    <script src="app.js?v=20261110-telegram-debug"></script>
+    <script src="app.js?v=20261110-telegram-code-fallback"></script>
 </body>
 </html>
