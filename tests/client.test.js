@@ -424,6 +424,6 @@ test('main menu has an explicit join-by-code action even when Telegram SDK and U
 });
 
 test('Telegram invitation share text always tells guests the visible room code', () => {
-    assert.match(appSource, /Код комнаты: ' \\+ roomId/);
+    assert.ok(appSource.includes("Код комнаты: ' + roomId"));
     assert.match(appSource, /Если Telegram откроет меню вместо партии/);
 });
