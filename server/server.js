@@ -201,18 +201,11 @@ function leaveCurrentGame(socket, options = {}) {
     }
 
     if (playerId === 'O') {
-        deleteRoom(game);
-        const opponent = game.players.X;
-        if (opponent && opponent.socketId) {
-            const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-            if (opponentSocket) {
-                opponentSocket.leave(roomId);
-                clearSocketRoomData(opponentSocket);
-                opponentSocket.emit('roomClosed', {
-                    message: 'Создатель завершил эту комнату.'
-                });
-            }
-        }
+        // Leaving the screen is not deleting an already shared invitation.
+        // Keep the room until its normal inactivity TTL; the invitee can join
+        // even if the creator has opened another room in the meantime.
+        persist(game);
+        emitState(game);
         return;
     }
 
@@ -291,7 +284,8 @@ io.on('connection', (socket) => {
 
         const game = games.get(roomId);
         if (!game) {
-            emitGameError(socket, 'Игра не найдена или уже завершена', 'ROOM_NOT_FOUND');
+            console.log('Попытка входа по устаревшей ссылке: ' + roomId);
+            emitGameError(socket, 'Приглашение больше не действует. Попросите создать новое.', 'ROOM_NOT_FOUND');
             return;
         }
         if (game.players.X) {
