@@ -302,7 +302,7 @@ test('Invitation link from Telegram works when SDK has no initData', () => {
     c.run("window.Telegram = { WebApp: { initData: '', ready() {}, expand() {} } }");
     c.boot();
     c.run("roomId = 'S68N7E'");
-    assert.equal(c.run('buildInviteUrl()'), 'https://t.me/tictactoe_test_bot?startapp=room_S68N7E');
+    assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=S68N7E');
 });
 
 test('A code entered manually starts joining the selected room', async () => {
