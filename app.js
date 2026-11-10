@@ -76,7 +76,9 @@ function getInviteRoomId() {
         : null;
     const candidates = [
         SEARCH_PARAMS.get('room'),
+        SEARCH_PARAMS.get('startapp'),
         SEARCH_PARAMS.get('tgWebAppStartParam'),
+        hashParams.get('startapp'),
         hashParams.get('tgWebAppStartParam'),
         telegram && telegram.initDataUnsafe && telegram.initDataUnsafe.start_param,
         initData && initData.get('start_param')
@@ -165,20 +167,30 @@ function readTelegramSession() {
         return Promise.resolve(null);
     }
 
+    // A Telegram CloudStorage callback is not guaranteed to arrive (older
+    // clients, connectivity issues). Never block a normal app launch forever.
     return new Promise((resolve) => {
-        cloudStorage.getItem(SESSION_STORAGE_KEY, (error, raw) => {
-            if (error || !raw) {
-                resolve(null);
-                return;
-            }
-
-            try {
-                const parsed = JSON.parse(raw);
-                resolve(isSavedSession(parsed) ? parsed : null);
-            } catch (_error) {
-                resolve(null);
-            }
-        });
+        let settled = false;
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve(value);
+        };
+        const timeout = setTimeout(() => finish(null), 1500);
+        try {
+            cloudStorage.getItem(SESSION_STORAGE_KEY, (error, raw) => {
+                if (error || !raw) return finish(null);
+                try {
+                    const parsed = JSON.parse(raw);
+                    finish(isSavedSession(parsed) ? parsed : null);
+                } catch (_error) {
+                    finish(null);
+                }
+            });
+        } catch (_error) {
+            finish(null);
+        }
     });
 }
 
@@ -195,7 +207,7 @@ function buildInviteUrl() {
     if (!roomId) return '';
 
     const telegram = getTelegramWebApp();
-    if (telegram && telegram.initData && TELEGRAM_BOT_USERNAME) {
+    if (telegram && TELEGRAM_BOT_USERNAME) {
         const startParam = 'room_' + roomId;
         return 'https://t.me/' + TELEGRAM_BOT_USERNAME + '?startapp=' + encodeURIComponent(startParam);
     }
@@ -266,6 +278,16 @@ function startLocalGame() {
     ensureBoardRendered();
     updateConnectionStatus('Игра на одном устройстве', '#ffffff');
     updateUI();
+}
+
+function joinRoomFromCode() {
+    const input = $('roomCodeInput');
+    const code = normalizeRoomCode(input.value);
+    if (!code) {
+        updateConnectionStatus('⚠️ Введите 6 символов из приглашения', '#ffe49a');
+        return;
+    }
+    void joinGameByLink(code);
 }
 
 function showMultiplayerMenu() {
@@ -465,24 +487,34 @@ async function resumeSavedGame(savedSession) {
 }
 
 async function restoreOrJoinOnlineGame() {
-    const initialInviteRoomId = getInviteRoomId();
-    const savedSession = await readSavedSession();
-    // If the Telegram SDK became available while CloudStorage was resolving,
-    // still honor the invite instead of restoring a different old room.
-    const inviteRoomId = getInviteRoomId() || initialInviteRoomId;
-
-    if (inviteRoomId && savedSession && savedSession.roomId === inviteRoomId) {
-        await resumeSavedGame(savedSession);
-        return;
-    }
-
+    const inviteRoomId = getInviteRoomId();
     if (inviteRoomId) {
-        clearSavedSession();
-        await joinGameByLink(inviteRoomId);
+        // Joining through a Telegram invitation must NEVER wait on CloudStorage.
+        // A hung getItem callback was preventing the invited player from joining.
+        // Only a locally held token for this exact room can resume its seat.
+        const localSession = readLocalSession();
+        if (localSession && localSession.roomId === inviteRoomId) {
+            await resumeSavedGame(localSession);
+        } else {
+            clearSavedSession();
+            await joinGameByLink(inviteRoomId);
+        }
         return;
     }
 
-    if (savedSession) {
+    // Ordinary bot launch (not an invitation): restore a previous room.
+    // CloudStorage restoration is bounded in time by readTelegramSession().
+    const savedSession = await readSavedSession();
+    // Handle Telegram clients that inject start_param while storage loads.
+    const lateInvite = getInviteRoomId();
+    if (lateInvite) {
+        if (savedSession && savedSession.roomId === lateInvite) {
+            await resumeSavedGame(savedSession);
+        } else {
+            clearSavedSession();
+            await joinGameByLink(lateInvite);
+        }
+    } else if (savedSession) {
         await resumeSavedGame(savedSession);
     }
 }
@@ -523,7 +555,7 @@ function updateMultiplayerStatus() {
     if (!isMultiplayer) return;
 
     if (multiplayerStatus === 'waiting') {
-        updateConnectionStatus('🟡 Игра создана. Отправьте приглашение второму игроку.', '#ffe49a');
+        updateConnectionStatus('🟡 Комната ' + roomId + ': ожидаем второго игрока из другого Telegram-аккаунта. Приглашение можно отправить снова.', '#ffe49a');
     } else if (multiplayerStatus === 'finished') {
         const nextStarter = firstPlayer === 'X' ? 'O' : 'X';
         const seconds = nextRoundAt ? Math.max(0, Math.ceil((nextRoundAt - Date.now()) / 1000)) : null;
