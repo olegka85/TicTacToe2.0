@@ -315,13 +315,6 @@
         <button type="button" class="action-btn" onclick="joinTelegramFallbackCode()">🎮 Войти в партию</button>
     </section>
 
-    <details id="telegramDebugDetails" class="rules" hidden>
-        <summary>🛠 Диагностика Telegram</summary>
-        <p class="helper-text">Показывает, передал ли Telegram код комнаты. Без токенов, подписей и данных аккаунта.</p>
-        <pre id="telegramDebugOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;text-align:left"></pre>
-        <button type="button" class="action-btn secondary" onclick="copyLaunchDiagnostics()">📋 Копировать диагностику</button>
-    </details>
-
     <div id="mainMenu" class="menu">
         <button class="action-btn" type="button" onclick="startLocalGame()">📱 На одном устройстве</button>
         <button class="action-btn" type="button" onclick="showMultiplayerMenu()">🌐 Онлайн игра</button>
@@ -375,6 +368,6 @@
     <script async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('ttt-telegram-sdk-loaded'))"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="server/game-rules.js?v=20261024-alternate-starters"></script>
-    <script src="app.js?v=20261110-telegram-code-fallback"></script>
+    <script src="app.js?v=20261111-hide-telegram-debug"></script>
 </body>
 </html>
