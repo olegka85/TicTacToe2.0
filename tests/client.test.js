@@ -366,14 +366,14 @@ test('Telegram startapp link has room code and the website link remains availabl
     assert.equal(c.run('buildInviteUrl()'), 'http://localhost/?room=QPK96M');
 });
 
-test('Telegram SDK without start_param displays visible manual room entry and safe diagnostics', async () => {
+test('Telegram SDK without start_param displays manual room entry, without debug panel', async () => {
     const c = client();
     c.run("window.Telegram = { WebApp: { initData: '', platform: 'android', initDataUnsafe: {}, ready() {}, expand() {} } }");
     c.boot();
     assert.equal(c.elements.get('telegramLaunchHelp').hidden, false);
-    assert.equal(c.elements.get('telegramDebugDetails').hidden, false);
-    assert.match(c.elements.get('telegramDebugOutput').textContent, /"requestedRoom": "missing"/);
-    assert.doesNotMatch(c.elements.get('telegramDebugOutput').textContent, /hash=|signature=|auth_date=/);
+
+
+
     c.elements.get('telegramRoomCodeInput').value = 'qpk96m';
     c.run('joinTelegramFallbackCode()');
     await new Promise(resolve => setImmediate(resolve));
@@ -426,4 +426,13 @@ test('main menu has an explicit join-by-code action even when Telegram SDK and U
 test('Telegram invitation share text always tells guests the visible room code', () => {
     assert.ok(appSource.includes("Код комнаты: ' + roomId"));
     assert.match(appSource, /Если Telegram откроет меню вместо партии/);
+});
+
+
+test('Telegram debug UI is absent while the room-code fallback remains', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+    assert.doesNotMatch(html, /telegramDebugDetails|telegramDebugOutput|Копировать диагностику|Диагностика Telegram/);
+    assert.match(html, /telegramLaunchHelp/);
+    assert.match(html, /Войти по коду приглашения/);
+    assert.ok(!appSource.includes('copyLaunchDiagnostics('));
 });
