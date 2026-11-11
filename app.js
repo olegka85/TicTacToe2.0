@@ -158,24 +158,8 @@ function reportLaunch(stage, errorCode) {
 }
 
 function updateTelegramLaunchHelp() {
-    const hasTelegram = isTelegramLaunch();
-    const details = $('telegramDebugDetails');
     const fallback = $('telegramLaunchHelp');
-    if (details) details.hidden = !hasTelegram && !SEARCH_PARAMS.has('debug');
-    if (fallback) fallback.hidden = !hasTelegram || Boolean(getInviteRoomId()) || isMultiplayer;
-    const output = $('telegramDebugOutput');
-    if (output) output.textContent = JSON.stringify(launchDiagnostics(), null, 2);
-}
-
-function copyLaunchDiagnostics() {
-    const info = JSON.stringify(launchDiagnostics(), null, 2);
-    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(info).then(() => {
-            updateConnectionStatus('Диагностика скопирована', '#b8ffbf');
-        }).catch(() => updateConnectionStatus(info, '#ffffff'));
-    } else {
-        updateConnectionStatus(info, '#ffffff');
-    }
+    if (fallback) fallback.hidden = !isTelegramLaunch() || Boolean(getInviteRoomId()) || isMultiplayer;
 }
 
 function joinTelegramFallbackCode() {
